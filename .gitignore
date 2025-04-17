@@ -1,0 +1,61 @@
+# 编译生成的文件
+*.o
+# *.obj
+*.so
+# *.dll
+*.dylib
+*.exe
+*.out
+# *.a
+# *.lib
+*.pdb
+*.idb
+*.class
+
+# CMake 生成的文件
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+build/
+# *.cmake
+
+# Visual Studio 生成的文件
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+*.ipch
+*.opensdf
+*.sdf
+*.tlog
+*.lastbuildstate
+*.user
+*.unsuccessfulbuild
+*.VC.db
+*.VC.opendb
+
+# Visual Studio Code 配置文件
+.vscode/
+*.code-workspace
+
+# Vulkan SDK 生成的文件
+*.spv
+
+# 日志文件
+*.log
+
+# 临时文件
+*.tmp
+*.temp
+*.swp
+*.DS_Store
+Thumbs.db
+
+# 操作系统生成的文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Git 忽略规则文件
+#.gitignore
