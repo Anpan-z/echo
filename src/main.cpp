@@ -33,9 +33,15 @@
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 
-// Use relative paths instead of absolute paths
-const std::string MODEL_PATH = "../model/viking_room.obj";
-const std::string TEXTURE_PATH = "../model/viking_room.png"; // Update the path to the correct directory
+const uint32_t SHADOW_MAP_WIDTH = 2048;
+const uint32_t SHADOW_MAP_HEIGHT = 2048;
+
+
+//const std::string MODEL_PATH = "CornellBox-Original.obj";
+const std::string MODEL_PATH = "../model/CornellBox/CornellBox-Glossy.obj";
+//const std::string MTL_PATH = "CornellBox-Original.mtl";
+const std::string MTL_PATH = "../model/CornellBox";
+const std::string TEXTURE_PATH = "viking_room.png";
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -85,10 +91,17 @@ struct SwapChainSupportDetails {
     std::vector<VkPresentModeKHR> presentModes;
 };
 
+struct Model {
+    VkBuffer vertexBuffer;
+    VkBuffer indexBuffer;
+    std::vector<uint32_t> indices;
+    glm::mat4 modelMatrix;
+};
+
 struct Vertex {
     glm::vec3 pos;
     glm::vec3 color;
-    glm::vec2 texCoord;
+    glm::vec3 normal;
 
     static VkVertexInputBindingDescription getBindingDescription() {
         VkVertexInputBindingDescription bindingDescription{};
@@ -114,23 +127,20 @@ struct Vertex {
 
         attributeDescriptions[2].binding = 0;
         attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-        attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
-
+        attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescriptions[2].offset = offsetof(Vertex, normal);
         return attributeDescriptions;
     }
 
     bool operator==(const Vertex& other) const {
-        return pos == other.pos && color == other.color && texCoord == other.texCoord;
+        return pos == other.pos && color == other.color && normal == other.normal;
     }
 };
 
 namespace std {
     template<> struct hash<Vertex> {
         size_t operator()(Vertex const& vertex) const {
-            return ((hash<glm::vec3>()(vertex.pos) ^
-                   (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
-                   (hash<glm::vec2>()(vertex.texCoord) << 1);
+            return ((hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^ (hash<glm::vec2>()(vertex.normal) << 1);
         }
     };
 }
@@ -139,6 +149,9 @@ struct UniformBufferObject {
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
+    glm::vec3 cameraPos; // 
+    float padding;       // 保持对齐（vec3 + float = 16字节）
+    glm::mat4 lightSpaceMatrix;
 };
 
 //const std::vector<Vertex> vertices = {
@@ -221,6 +234,26 @@ private:
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> inFlightFences;
+    
+    //shadow mapping
+    VkImage shadowDepthImage;
+    VkDeviceMemory shadowDepthImageMemory;
+    VkImageView shadowDepthImageView;
+    VkFramebuffer shadowFramebuffer;
+    VkRenderPass shadowRenderPass;
+    VkPipeline shadowPipeline;
+    VkPipelineLayout shadowPipelineLayout;
+
+    std::vector<VkBuffer> shadowUniformBuffers;
+    std::vector<VkDeviceMemory> shadowUniformBufferMemories;
+    std::vector<void*> shadowUniformMappedMemory;
+    std::vector<VkDescriptorSet> shadowDescriptorSets;
+
+    VkDescriptorSetLayout shadowDescriptorSetLayout;
+
+    VkSampler shadowSampler;
+
+    std::vector<Model> models;
 
     bool framebufferResized = false;
 
@@ -257,17 +290,27 @@ private:
         createDepthResources();
         createFramebuffers();
         createCommandPool();
-        createTextureImage();
-        createTextureImageView();
-        createTextureSampler();
+        //createTextureImage();
+        //createTextureImageView();
+        //createTextureSampler();
         loadModel();
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
         createDescriptorPool();
-        createDescriptorSets();
+        //createDescriptorSets();
         createCommandBuffers();
         createSyncObjects();
+
+        createShadowResources();
+        createShadowRenderPass();
+        createShadowFramebuffer();
+        createShadowDescriptorSetLayout();
+        createShadowUniformBuffer();
+        createShadowDescriptorSet();
+        createShadowPipeline();
+        createShadowSampler();
+        createDescriptorSets();
     }
 
     void mainLoop() {
@@ -294,9 +337,29 @@ private:
         vkDestroySwapchainKHR(device, swapChain, nullptr);
     }
 
+    void cleanupShadowResources() {
+        vkDestroyImage(device, shadowDepthImage, nullptr);
+        vkFreeMemory(device, shadowDepthImageMemory, nullptr);
+        vkDestroyImageView(device, shadowDepthImageView, nullptr);
+
+        vkDestroyFramebuffer(device, shadowFramebuffer, nullptr);
+        vkDestroyRenderPass(device, shadowRenderPass, nullptr);
+        vkDestroyPipeline(device, shadowPipeline, nullptr);
+        vkDestroyPipelineLayout(device, shadowPipelineLayout, nullptr);
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			vkDestroyBuffer(device, shadowUniformBuffers[i], nullptr);
+			vkFreeMemory(device, shadowUniformBufferMemories[i], nullptr);
+		}
+
+        vkDestroyDescriptorSetLayout(device, shadowDescriptorSetLayout, nullptr);
+        vkDestroySampler(device, shadowSampler, nullptr);
+        
+    }
 
     void cleanup() {
         cleanupSwapChain();
+        cleanupShadowResources();
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
@@ -639,7 +702,7 @@ private:
     std::string readFileToString(const std::string& filename) {
         std::ifstream file(filename);
         if (!file.is_open()) {
-            std::cout << "无法打开文件" << std::endl;
+            std::cout << "Failed to open file." << std::endl;
             return "";
         }
 
@@ -658,14 +721,21 @@ private:
         uboLayoutBinding.pImmutableSamplers = nullptr;
         uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-        VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-        samplerLayoutBinding.binding = 1;
-        samplerLayoutBinding.descriptorCount = 1;
-        samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        samplerLayoutBinding.pImmutableSamplers = nullptr;
-        samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        //VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+        //samplerLayoutBinding.binding = 1;
+        //samplerLayoutBinding.descriptorCount = 1;
+        //samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        //samplerLayoutBinding.pImmutableSamplers = nullptr;
+        //samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-        std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
+        VkDescriptorSetLayoutBinding shadowMapBinding{};
+        shadowMapBinding.binding = 1;
+        shadowMapBinding.descriptorCount = 1;
+        shadowMapBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        shadowMapBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        shadowMapBinding.pImmutableSamplers = nullptr;
+
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, shadowMapBinding };
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());;
@@ -679,7 +749,7 @@ private:
     void createGraphicsPipeline() {
         std::string vertex_shader_code_path = "../shader/shader.vert";
         std::string fragment_shader_code_path = "../shader/shader.frag";
-        
+
         std::string vs = readFileToString(vertex_shader_code_path);
         shaderc::Compiler compiler;
         //编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
@@ -697,10 +767,9 @@ private:
         vsmoduleCreateInfo.flags = 0;
         vsmoduleCreateInfo.codeSize = vert_spv.size();// 顶点着色器SPV数据总字节数
         vsmoduleCreateInfo.pCode = vert_spv.data(); // 顶点着色器SPV数据
-
-
-        std::string fs = readFileToString(fragment_shader_code_path); // Ensure the correct path to the fragment shader
-        auto fragResult = compiler.CompileGlslToSpv(fs, shaderc_glsl_default_fragment_shader, fragment_shader_code_path.c_str());
+        
+        std::string fs = readFileToString(fragment_shader_code_path);
+        auto fragResult = compiler.CompileGlslToSpv(fs, shaderc_glsl_fragment_shader, fragment_shader_code_path.c_str());
         auto errorInfo_frag = fragResult.GetErrorMessage();
         if (!errorInfo_frag.empty()) {
             throw std::runtime_error("Fragment shader compilation error: " + errorInfo_frag);
@@ -796,7 +865,7 @@ private:
 
         std::vector<VkDynamicState> dynamicStates = {
             VK_DYNAMIC_STATE_VIEWPORT,
-            VK_DYNAMIC_STATE_SCISSOR
+            VK_DYNAMIC_STATE_SCISSOR,
         };
         VkPipelineDynamicStateCreateInfo dynamicState{};
         dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
@@ -881,6 +950,15 @@ private:
 
     }
 
+    void createShadowResources() {
+		//VkFormat SHADOW_DEPTH_FORMAT = findDepthFormat();
+        VkFormat SHADOW_DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
+		createImage(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, SHADOW_DEPTH_FORMAT, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowDepthImage, shadowDepthImageMemory);
+		shadowDepthImageView = createImageView(shadowDepthImage, SHADOW_DEPTH_FORMAT, VK_IMAGE_ASPECT_DEPTH_BIT);
+        transitionImageLayout(shadowDepthImage, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        transitionImageLayout(shadowDepthImage, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+	}
+
     VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
         for (VkFormat format : candidates) {
             VkFormatProperties props;
@@ -901,6 +979,364 @@ private:
             VK_IMAGE_TILING_OPTIMAL,
             VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
         );
+    }
+
+    void createShadowSampler() {
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+        samplerInfo.compareEnable = VK_FALSE;
+        samplerInfo.compareOp = VK_COMPARE_OP_LESS;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+        vkCreateSampler(device, &samplerInfo, nullptr, &shadowSampler);
+    }
+
+    void createShadowRenderPass() {
+        VkAttachmentDescription depthAttachment{};
+        depthAttachment.format = VK_FORMAT_D32_SFLOAT;
+        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+        VkAttachmentReference depthAttachmentRef{};
+        depthAttachmentRef.attachment = 0;
+        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 0;
+        subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+        VkRenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = 1;
+        renderPassInfo.pAttachments = &depthAttachment;
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = &subpass;
+
+        vkCreateRenderPass(device, &renderPassInfo, nullptr, &shadowRenderPass);
+    }
+
+    void createShadowFramebuffer() {
+        VkImageView attachments[] = { shadowDepthImageView };
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = shadowRenderPass;
+        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.pAttachments = attachments;
+        framebufferInfo.width = SHADOW_MAP_WIDTH;
+        framebufferInfo.height = SHADOW_MAP_HEIGHT;
+        framebufferInfo.layers = 1;
+
+        vkCreateFramebuffer(device, &framebufferInfo, nullptr, &shadowFramebuffer);
+    }
+
+    void createShadowPipeline() {
+        std::string shadow_vertex_shader_code_path = "../shader/shadow.vert";
+        std::string shadow_fragment_shader_code_path = "../shader/shadow.frag";
+
+        std::string vs = readFileToString(shadow_vertex_shader_code_path);
+        std::string fs = readFileToString(shadow_fragment_shader_code_path);
+
+        shaderc::Compiler compiler;
+        //编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
+        auto vertResult = compiler.CompileGlslToSpv(vs, shaderc_glsl_vertex_shader, shadow_vertex_shader_code_path.c_str());
+        auto errorInfo_vert = vertResult.GetErrorMessage();
+        if (!errorInfo_vert.empty()) {
+            throw std::runtime_error("Vertex shader compilation error: " + errorInfo_vert);
+        }
+        //可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
+
+        std::span<const uint32_t> vert_spv = { vertResult.begin(), size_t(vertResult.end() - vertResult.begin()) * 4 };
+        VkShaderModuleCreateInfo vsmoduleCreateInfo;// 准备顶点着色器模块创建信息
+        vsmoduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        vsmoduleCreateInfo.pNext = nullptr;// 自定义数据的指针
+        vsmoduleCreateInfo.flags = 0;
+        vsmoduleCreateInfo.codeSize = vert_spv.size();// 顶点着色器SPV数据总字节数
+        vsmoduleCreateInfo.pCode = vert_spv.data(); // 顶点着色器SPV数据
+
+        auto fragResult = compiler.CompileGlslToSpv(fs, shaderc_glsl_fragment_shader, shadow_fragment_shader_code_path.c_str());
+        auto errorInfo_frag = fragResult.GetErrorMessage();
+        if (!errorInfo_frag.empty()) {
+            throw std::runtime_error("Fragment shader compilation error: " + errorInfo_frag);
+        }
+        //可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
+        std::span<const uint32_t> frag_spv = { fragResult.begin(), size_t(fragResult.end() - fragResult.begin()) * 4 };
+        VkShaderModuleCreateInfo fsmoduleCreateInfo;// 准备顶点着色器模块创建信息
+        fsmoduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        fsmoduleCreateInfo.pNext = nullptr;// 自定义数据的指针
+        fsmoduleCreateInfo.flags = 0;
+        fsmoduleCreateInfo.codeSize = frag_spv.size();// 顶点着色器SPV数据总字节数
+        fsmoduleCreateInfo.pCode = frag_spv.data(); // 顶点着色器SPV数据
+
+        VkShaderModule vertShaderModule = createShaderModule(vsmoduleCreateInfo);
+        VkShaderModule fragShaderModule = createShaderModule(fsmoduleCreateInfo);
+
+        VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+        vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        vertShaderStageInfo.module = vertShaderModule;
+        vertShaderStageInfo.pName = "main";
+
+        VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+        fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragShaderStageInfo.module = fragShaderModule;
+        fragShaderStageInfo.pName = "main";
+
+        VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+        auto bindingDescription = Vertex::getBindingDescription();
+        auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+        vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInputInfo.vertexBindingDescriptionCount = 1;
+        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+        inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = (float)SHADOW_MAP_WIDTH;
+        viewport.height = (float)SHADOW_MAP_HEIGHT;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+
+        VkRect2D scissor{};
+        scissor.offset = { 0, 0 };
+        scissor.extent = { SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT };
+
+        VkPipelineViewportStateCreateInfo viewportState{};
+        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportState.viewportCount = 1;
+        viewportState.pViewports = &viewport;
+        viewportState.scissorCount = 1;
+        viewportState.pScissors = &scissor;
+
+        VkPipelineRasterizationStateCreateInfo rasterizer{};
+        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizer.depthClampEnable = VK_FALSE;
+        rasterizer.rasterizerDiscardEnable = VK_FALSE;
+        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizer.lineWidth = 1.0f;
+        rasterizer.cullMode = VK_CULL_MODE_NONE;
+        rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        rasterizer.depthBiasEnable = VK_FALSE;
+        //rasterizer.depthBiasConstantFactor = 1.25f;
+        //rasterizer.depthBiasClamp = 0.0f;
+        //rasterizer.depthBiasSlopeFactor = 1.75f;
+
+        VkPipelineMultisampleStateCreateInfo multisampling{};
+        multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        multisampling.sampleShadingEnable = VK_FALSE;
+
+        VkPipelineDepthStencilStateCreateInfo depthStencil{};
+        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable = VK_TRUE;
+        depthStencil.depthWriteEnable = VK_TRUE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+        depthStencil.depthBoundsTestEnable = VK_FALSE;
+        depthStencil.stencilTestEnable = VK_FALSE;
+
+        VkPipelineColorBlendStateCreateInfo colorBlending{};
+        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlending.logicOpEnable = VK_FALSE;
+        colorBlending.attachmentCount = 0; // 因为没有 color attachment
+        colorBlending.pAttachments = nullptr;
+
+        //std::vector<VkDynamicState> dynamicStates = {
+        //    VK_DYNAMIC_STATE_VIEWPORT,
+        //    VK_DYNAMIC_STATE_SCISSOR,
+        //    VK_DYNAMIC_STATE_DEPTH_BIAS
+        //};
+        //VkPipelineDynamicStateCreateInfo dynamicState{};
+        //dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        //dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+        //dynamicState.pDynamicStates = dynamicStates.data();
+
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutInfo.setLayoutCount = 1;
+        pipelineLayoutInfo.pSetLayouts = &shadowDescriptorSetLayout;
+
+        if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &shadowPipelineLayout) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create shadow pipeline layout!");
+        }
+
+        VkGraphicsPipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.stageCount = 2;
+        pipelineInfo.pStages = shaderStages;
+        pipelineInfo.pVertexInputState = &vertexInputInfo;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pDepthStencilState = &depthStencil;
+        pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.layout = shadowPipelineLayout;
+        pipelineInfo.renderPass = shadowRenderPass;
+        pipelineInfo.subpass = 0;
+
+        if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowPipeline) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create shadow graphics pipeline!");
+        }
+
+        vkDestroyShaderModule(device, fragShaderModule, nullptr);
+        vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    }
+
+    // ====== Shadow Descriptor Set 和录制指令逻辑 ======
+
+    struct ShadowUBO {
+        glm::mat4 lightSpaceMatrix;
+    };
+
+    void createShadowDescriptorSetLayout() {
+        VkDescriptorSetLayoutBinding uboLayoutBinding{};
+        uboLayoutBinding.binding = 0;
+        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboLayoutBinding.descriptorCount = 1;
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        uboLayoutBinding.pImmutableSamplers = nullptr;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = 1;
+        layoutInfo.pBindings = &uboLayoutBinding;
+
+        vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &shadowDescriptorSetLayout);
+    }
+
+    void createShadowUniformBuffer() {
+        VkDeviceSize bufferSize = sizeof(ShadowUBO);
+        shadowUniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        shadowUniformBufferMemories.resize(MAX_FRAMES_IN_FLIGHT);
+        shadowUniformMappedMemory.resize(MAX_FRAMES_IN_FLIGHT);
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                shadowUniformBuffers[i], shadowUniformBufferMemories[i]);
+            vkMapMemory(device, shadowUniformBufferMemories[i], 0, bufferSize, 0, &shadowUniformMappedMemory[i]);
+        }
+    }
+
+    void createShadowDescriptorSet() {
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, shadowDescriptorSetLayout);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = descriptorPool;
+        allocInfo.descriptorSetCount = MAX_FRAMES_IN_FLIGHT;
+        allocInfo.pSetLayouts = layouts.data();
+
+        shadowDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+        if (vkAllocateDescriptorSets(device, &allocInfo, shadowDescriptorSets.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate descriptor sets!");
+        }
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = shadowUniformBuffers[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(ShadowUBO);
+
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = shadowDescriptorSets[i];
+            descriptorWrite.dstBinding = 0;
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pBufferInfo = &bufferInfo;
+
+            vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        }
+    }
+
+    void recordShadowCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+        //VkCommandBufferBeginInfo beginInfo{};
+        //beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+        //if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+        //    throw std::runtime_error("failed to begin recording command buffer!");
+        //}
+
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = shadowRenderPass;
+        renderPassInfo.framebuffer = shadowFramebuffer;
+        renderPassInfo.renderArea.offset = { 0, 0 };
+        renderPassInfo.renderArea.extent = { SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT };
+
+        VkClearValue clearValue{};
+        clearValue.depthStencil = { 1.0f, 0 };
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearValue;
+
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
+
+        //VkViewport viewport = {};
+        //viewport.x = 0.0f;
+        //viewport.y = 0.0f;
+        //viewport.width = static_cast<float>(SHADOW_MAP_WIDTH);
+        //viewport.height = static_cast<float>(SHADOW_MAP_HEIGHT);
+        //viewport.minDepth = 0.0f;
+        //viewport.maxDepth = 1.0f;
+
+        //vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        //VkRect2D scissor = {};
+        //scissor.offset = { 0, 0 };
+        //scissor.extent = { SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT };
+        //vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        //vkCmdSetDepthBias(commandBuffer, 1.25f, 0.0f, 1.75f);
+        VkBuffer vertexBuffers[] = { vertexBuffer };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+        vkCmdBindDescriptorSets(
+            commandBuffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            shadowPipelineLayout,
+            0, 1, &shadowDescriptorSets[currentFrame],
+            0, nullptr
+        );
+
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+
+        vkCmdEndRenderPass(commandBuffer);
+
+        //if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+        //    throw std::runtime_error("failed to record command buffer!");
+        //}
+    }
+
+    bool isDepthFormat(VkFormat format) {
+        return format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
     }
 
     bool hasStencilComponent(VkFormat format) {
@@ -1015,11 +1451,21 @@ private:
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image = image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        //barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         barrier.subresourceRange.baseMipLevel = 0;
         barrier.subresourceRange.levelCount = 1;
         barrier.subresourceRange.baseArrayLayer = 0;
         barrier.subresourceRange.layerCount = 1;
+
+        if (isDepthFormat(format)) {
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            if (hasStencilComponent(format)) {
+                barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+            }
+        }
+        else {
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        }
 
         VkPipelineStageFlags sourceStage;
         VkPipelineStageFlags destinationStage;
@@ -1037,6 +1483,27 @@ private:
 
             sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
             destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        }
+        else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+            sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        }
+        else if (oldLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
+            barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+            sourceStage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+            destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        }
+        else if (oldLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+            barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+            sourceStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
         }
         else {
             throw std::invalid_argument("unsupported layout transition!");
@@ -1077,46 +1544,140 @@ private:
         endSingleTimeCommands(commandBuffer);
     }
 
-   void loadModel() {
+    void GenerateNormals(tinyobj::attrib_t& attrib, std::vector<tinyobj::shape_t>& shapes) {
+        size_t numVertices = attrib.vertices.size() / 3;
+        std::vector<glm::vec3> vertexNormals(numVertices, glm::vec3(0.0f));
+
+        for (const auto& shape : shapes) {
+            size_t index_offset = 0;
+
+            for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++) {
+                int fv = shape.mesh.num_face_vertices[f];
+
+                if (fv != 3) {
+                    std::cerr << "Non-triangular face, skipping..." << std::endl;
+                    index_offset += fv;
+                    continue;
+                }
+
+                tinyobj::index_t idx0 = shape.mesh.indices[index_offset + 0];
+                tinyobj::index_t idx1 = shape.mesh.indices[index_offset + 1];
+                tinyobj::index_t idx2 = shape.mesh.indices[index_offset + 2];
+
+                glm::vec3 v0(
+                    attrib.vertices[3 * idx0.vertex_index + 0],
+                    attrib.vertices[3 * idx0.vertex_index + 1],
+                    attrib.vertices[3 * idx0.vertex_index + 2]);
+
+                glm::vec3 v1(
+                    attrib.vertices[3 * idx1.vertex_index + 0],
+                    attrib.vertices[3 * idx1.vertex_index + 1],
+                    attrib.vertices[3 * idx1.vertex_index + 2]);
+
+                glm::vec3 v2(
+                    attrib.vertices[3 * idx2.vertex_index + 0],
+                    attrib.vertices[3 * idx2.vertex_index + 1],
+                    attrib.vertices[3 * idx2.vertex_index + 2]);
+
+                glm::vec3 edge1 = v1 - v0;
+                glm::vec3 edge2 = v2 - v0;
+                glm::vec3 faceNormal = glm::normalize(glm::cross(edge1, edge2));
+
+                vertexNormals[idx0.vertex_index] = faceNormal;
+                vertexNormals[idx1.vertex_index] = faceNormal;
+                vertexNormals[idx2.vertex_index] = faceNormal;
+
+                index_offset += fv;
+            }
+        }
+
+        // 清空已有法线（如果有）
+        attrib.normals.clear();
+
+        // 归一化并写入 attrib.normals
+        for (size_t i = 0; i < vertexNormals.size(); ++i) {
+            glm::vec3 n = glm::normalize(vertexNormals[i]);
+            attrib.normals.push_back(n.x);
+            attrib.normals.push_back(n.y);
+            attrib.normals.push_back(n.z);
+        }
+
+        for (auto& shape : shapes) {
+            for (auto& index : shape.mesh.indices) {
+                index.normal_index = index.vertex_index;
+            }
+        }
+
+        std::cout << "Generated smooth normals for " << numVertices << " vertices." << std::endl;
+    }
+
+    void loadModel() {
         tinyobj::attrib_t attrib;
         std::vector<tinyobj::shape_t> shapes;
         std::vector<tinyobj::material_t> materials;
         std::string warn, err;
 
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str(), MTL_PATH.c_str())) {
             throw std::runtime_error(warn + err);
         }
-        
+        if (attrib.normals.empty()) {
+			std::cout << "Model has no normal data, generating normals..." << std::endl;
+			GenerateNormals(attrib, shapes);
+		}
+        else {
+            std::cout << "Model already has normal data." << std::endl;
+        }
+        //GenerateNormals(attrib, shapes);
         std::unordered_map<Vertex, uint32_t> uniqueVertices{};
 
         for (const auto& shape : shapes) {
-            for (const auto& index : shape.mesh.indices) {
-                Vertex vertex{};
+            size_t indexOffset = 0;
+            for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++) {
+                int fv = shape.mesh.num_face_vertices[f];
+                int matId = shape.mesh.material_ids[f];
 
-                vertex.pos = {
-                    attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2]
-                };
-
-                vertex.texCoord = {
-                    attrib.texcoords[2 * index.texcoord_index + 0],
-                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-                };
-
-                vertex.color = { 1.0f, 1.0f, 1.0f };
-
-                vertices.push_back(vertex);
-
-                if (uniqueVertices.count(vertex) == 0) {
-                    uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
-                    vertices.push_back(vertex);
+                glm::vec3 color(1.0f);
+                if (matId >= 0 && matId < materials.size()) {
+                    const auto& mat = materials[matId];
+                    // 使用材质的漫反射颜色
+                    color = glm::vec3(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
                 }
 
-                indices.push_back(uniqueVertices[vertex]);
+                for (size_t v = 0; v < fv; v++) {
+                    tinyobj::index_t idx = shape.mesh.indices[indexOffset + v];
+                    Vertex vertex{};
+
+                    // 顶点坐标
+                    vertex.pos = {
+                        attrib.vertices[3 * idx.vertex_index + 0],
+                        attrib.vertices[3 * idx.vertex_index + 1],
+                        attrib.vertices[3 * idx.vertex_index + 2]
+                    };
+
+                    // 法线（可能不存在）
+                    if (idx.normal_index >= 0) {
+                        vertex.normal = {
+                            attrib.normals[3 * idx.normal_index + 0],
+                            attrib.normals[3 * idx.normal_index + 1],
+                            attrib.normals[3 * idx.normal_index + 2]
+                        };
+                    }
+                    else {
+                        vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);  // 默认朝上，或你后面再计算 face normal
+                    }
+
+                    vertex.color = color;
+
+                    if (uniqueVertices.count(vertex) == 0) {
+                        uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+                        vertices.push_back(vertex);
+                    }
+
+                    indices.push_back(uniqueVertices[vertex]);
+                }
+                indexOffset += fv;
             }
         }
-
     }
 
     void createVertexBuffer() {
@@ -1176,15 +1737,15 @@ private:
     void createDescriptorPool() {
         std::array<VkDescriptorPoolSize, 2> poolSizes{};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2;
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2;
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
-        poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2;
 
         if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor pool!");
@@ -1210,10 +1771,15 @@ private:
             bufferInfo.offset = 0;
             bufferInfo.range = sizeof(UniformBufferObject);
 
-            VkDescriptorImageInfo imageInfo{};
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfo.imageView = textureImageView;
-            imageInfo.sampler = textureSampler;
+            //VkDescriptorImageInfo imageInfo{};
+            //imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            //imageInfo.imageView = textureImageView;
+            //imageInfo.sampler = textureSampler;
+
+            VkDescriptorImageInfo shadowImageInfo{};
+            shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            shadowImageInfo.imageView = shadowDepthImageView;
+            shadowImageInfo.sampler = shadowSampler;
 
             std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
 
@@ -1231,7 +1797,7 @@ private:
             descriptorWrites[1].dstArrayElement = 0;
             descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             descriptorWrites[1].descriptorCount = 1;
-            descriptorWrites[1].pImageInfo = &imageInfo;
+            descriptorWrites[1].pImageInfo = &shadowImageInfo;
 
 
             vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
@@ -1424,15 +1990,36 @@ private:
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-
+        //ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.model = glm::mat4(1.0f);
+        //ubo.view = glm::lookAt(glm::vec3(0.0f, -5.0f, 0.5f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.view = glm::lookAt(glm::vec3(0.0f, 1.0f, 5.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
 
         ubo.proj[1][1] *= -1;
 
+        ubo.cameraPos = glm::vec3(0.0f, 1.0f, 5.0f);
+
+        auto lightPos = glm::vec3(3.0f, 3.0f, 3.0f);
+        glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        //glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 20.0f);
+        glm::mat4 lightProjection = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 1.0f, 10.0f);
+        lightProjection[1][1] *= -1; // 反转Y轴
+        ubo.lightSpaceMatrix = lightProjection * lightView * glm::mat4(1.0f);
+
+
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+    }
+
+    void updateShadowUniformBuffer(uint32_t currentFrame) {
+        ShadowUBO ubo{};
+        auto lightPos = glm::vec3(3.0f, 3.0f, 3.0f);
+        glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 lightProjection = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 1.0f, 10.0f);
+        lightProjection[1][1] *= -1; // 反转Y轴
+        ubo.lightSpaceMatrix = lightProjection * lightView * glm::mat4(1.0f);
+
+        memcpy(shadowUniformMappedMemory[currentFrame], &ubo, sizeof(ubo));
     }
 
     void drawFrame() {
@@ -1449,11 +2036,20 @@ private:
             throw std::runtime_error("failed to acquire swap chain image!");
         }
 
+        updateShadowUniformBuffer(currentFrame); // 更新光源VP矩阵
+
         updateUniformBuffer(currentFrame);
 
         vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
         vkResetCommandBuffer(commandBuffers[currentFrame], /*VkCommandBufferResetFlagBits*/ 0);
+        transitionImageLayout(shadowDepthImage, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        
+        VkCommandBuffer shadowcommandBuffer = beginSingleTimeCommands();
+        recordShadowCommandBuffer(shadowcommandBuffer, currentFrame); // 阴影 pass ✅
+        endSingleTimeCommands(shadowcommandBuffer);
+
+        //transitionImageLayout(shadowDepthImage, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
         recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
 
         VkSubmitInfo submitInfo{};
