@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include "vertex.hpp" // 包含顶点结构体定义
 #include "command_manager.hpp"
+#include "camera.hpp"
 #include <tiny_obj_loader.h> // 包含 tinyobj_loader 库
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -44,7 +45,7 @@ public:
 
     void createUniformBuffers(size_t maxFramesInFlight);
 
-    void updateUniformBuffer(uint32_t currentFrame, VkExtent2D swapChainExtent);
+    void updateUniformBuffer(uint32_t currentFrame, VkExtent2D swapChainExtent, Camera& camera);
 
     const std::vector<Vertex>& getVertices() const{return vertices;};
 

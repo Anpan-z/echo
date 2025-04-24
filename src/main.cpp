@@ -11,6 +11,7 @@
 #include "vulkan_context.hpp"
 #include "swap_chain_manager.hpp"
 #include "render_target.hpp"
+#include "camera.hpp"
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -57,6 +58,8 @@ private:
     RenderTarget renderTarget;
     ResourceManager resourceManager;
 
+    Camera camera;
+    
     void initWindow() {
         windowManager.init(WIDTH, HEIGHT, "Vulkan");
 
@@ -81,12 +84,22 @@ private:
         shadowMapping.init(device, physicalDevice, resourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
         renderPipeline.setup(shadowMapping);
         
+        camera.init();
         createSyncObjects();
     }
 
+    float deltaTime = 0.0f; // 每帧的时间间隔
+    float lastFrame = 0.0f; // 上一帧的时间
     void mainLoop() {
         while (!windowManager.shouldClose()) {
             windowManager.pollEvents();
+
+            float currentFrame = glfwGetTime();
+            deltaTime = currentFrame - lastFrame;
+            lastFrame = currentFrame;
+            
+            processInput(windowManager.getWindow(), camera, deltaTime);
+
             drawFrame();
         }
         vkDeviceWaitIdle(device);
@@ -150,7 +163,7 @@ private:
         }
 
         shadowMapping.updateShadowUniformBuffer(currentFrame); // update lightSpaceMatrix
-        resourceManager.updateUniformBuffer(currentFrame, swapChainManager.getSwapChainExtent());
+        resourceManager.updateUniformBuffer(currentFrame, swapChainManager.getSwapChainExtent(), camera);
 
         vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
@@ -205,8 +218,52 @@ private:
 
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
+
+    void processInput(GLFWwindow* window, Camera& camera, float deltaTime) {
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            camera.processKeyboard(CameraMovement::FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            camera.processKeyboard(CameraMovement::BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            camera.processKeyboard(CameraMovement::LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            camera.processKeyboard(CameraMovement::RIGHT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) // 空格键上升
+            camera.processKeyboard(CameraMovement::UP, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) // Ctrl 键下降
+            camera.processKeyboard(CameraMovement::DOWN, deltaTime);
+        // 鼠标输入处理
+        static bool firstMouse = true;
+        static float lastX = WIDTH / 2.0f;
+        static float lastY = HEIGHT / 2.0f;
     
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED); // 隐藏光标
+            double xpos, ypos;
+            glfwGetCursorPos(window, &xpos, &ypos);
+    
+            if (firstMouse) {
+                lastX = xpos;
+                lastY = ypos;
+                firstMouse = false;
+            }
+    
+            float xoffset = xpos - lastX;
+            float yoffset = lastY - ypos; // 注意这里是反的，因为 Y 坐标是从下往上的
+    
+            lastX = xpos;
+            lastY = ypos;
+    
+            camera.processMouseMovement(xoffset, yoffset, true);
+        } else {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL); // 显示光标
+            // 如果鼠标未按下，重置 firstMouse，避免跳跃
+            firstMouse = true;
+        }
+    }
 };
+
+
 
 int main() {
     HelloTriangleApplication app;

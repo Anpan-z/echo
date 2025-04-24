@@ -219,7 +219,7 @@ void ResourceManager::createUniformBuffers(size_t maxFramesInFlight) {
     }
 }
 
-void ResourceManager::updateUniformBuffer(uint32_t currentFrame, VkExtent2D swapChainExtent) {
+void ResourceManager::updateUniformBuffer(uint32_t currentFrame, VkExtent2D swapChainExtent, Camera& camera) {
     // static auto startTime = std::chrono::high_resolution_clock::now();
 
     // auto currentTime = std::chrono::high_resolution_clock::now();
@@ -233,8 +233,9 @@ void ResourceManager::updateUniformBuffer(uint32_t currentFrame, VkExtent2D swap
     ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
 
     ubo.proj[1][1] *= -1;
-
-    ubo.cameraPos = glm::vec3(0.0f, 1.0f, 5.0f);
+    ubo.view = camera.getViewMatrix(); // 使用相机的视图矩阵
+    ubo.cameraPos = camera.getPosition(); // 使用相机的位置
+    // ubo.cameraPos = glm::vec3(0.0f, 1.0f, 5.0f);
 
     auto lightPos = glm::vec3(3.0f, 3.0f, 3.0f);
     glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
