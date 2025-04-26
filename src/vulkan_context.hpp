@@ -58,6 +58,7 @@ public:
     VkSurfaceKHR getSurface() const { return surface; }
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) const;
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) const;
+    VkSampleCountFlagBits getMaxUsableSampleCount() const;
 
 private:
     void createInstance();

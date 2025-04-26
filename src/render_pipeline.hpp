@@ -9,7 +9,7 @@
 class RenderPipeline {
 public:
     // 初始化和清理方法
-    void init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager, ResourceManager& resourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers);
+    void init(VulkanContext& vulkanContext, SwapChainManager& swapChainManager, ResourceManager& resourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers);
     void cleanup();
 
     // 初始化渲染管线
@@ -43,6 +43,7 @@ private:
     VkImageView depthImageView;
 
     ResourceManager* resourceManager;
+    VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT; // MSAA采样数
     // 私有方法
     void createRenderPass();
     void createDescriptorSetLayout();

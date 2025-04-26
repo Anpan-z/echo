@@ -55,7 +55,7 @@ void ShadowMapping::cleanup() {
 void ShadowMapping::createShadowResources() {
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
     VkFormat SHADOW_DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
-    vulkanUtils.createImage(device, physicalDevice, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, SHADOW_DEPTH_FORMAT, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowDepthImage, shadowDepthImageMemory);
+    vulkanUtils.createImage(device, physicalDevice, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, VK_SAMPLE_COUNT_1_BIT, SHADOW_DEPTH_FORMAT, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowDepthImage, shadowDepthImageMemory);
     shadowDepthImageView = vulkanUtils.createImageView(device, shadowDepthImage, SHADOW_DEPTH_FORMAT, VK_IMAGE_ASPECT_DEPTH_BIT);
 }
 

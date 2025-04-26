@@ -6,12 +6,12 @@
 
 class RenderTarget {
 public:
-    void init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager, VkRenderPass renderPass);
+    void init(VulkanContext& vulkanContext, SwapChainManager& swapChainManager, VkRenderPass renderPass);
     void cleanup();
 
-    void recreateRenderTarget(SwapChainManager& swapChainManager, VkRenderPass renderPass){
+    void recreateRenderTarget(VulkanContext& vulkanContext, SwapChainManager& swapChainManager, VkRenderPass renderPass){
         cleanup();
-        init(device, physicalDevice, swapChainManager, renderPass);
+        init(vulkanContext, swapChainManager, renderPass);
     }
 
     const std::vector<VkFramebuffer>& getFramebuffers() const { return framebuffers; }
@@ -27,8 +27,15 @@ private:
     VkImageView depthImageView = VK_NULL_HANDLE;
 
     std::vector<VkFramebuffer> framebuffers;
+    VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT; // MSAA采样数
+
+    //MASS
+    VkImage msaaColorImage;
+    VkDeviceMemory msaaColorImageMemory;
+    VkImageView msaaColorImageView;
 
     void createDepthResources();
     void createFramebuffers(const std::vector<VkImageView>& swapChainImageViews, VkRenderPass renderPass);
+    void createMsaaColorResources();
     VkFormat findDepthFormat();
 };

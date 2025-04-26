@@ -1,25 +1,25 @@
 #pragma once
 
+#include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <vector>
 #include <vulkan/vulkan.h>
-#include <fstream>
-#include <iostream>
 
 class VulkanUtils
 {
   public:
     // 获取单例实例
-    static VulkanUtils &getInstance();
+    static VulkanUtils& getInstance();
 
     // 禁用拷贝构造和赋值操作
-    VulkanUtils(const VulkanUtils &) = delete;
-    VulkanUtils &operator=(const VulkanUtils &) = delete;
+    VulkanUtils(const VulkanUtils&) = delete;
+    VulkanUtils& operator=(const VulkanUtils&) = delete;
 
     // Vulkan 工具函数
-    void createImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format,
-                     VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image,
-                     VkDeviceMemory &imageMemory);
+    void createImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height,
+                     VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+                     VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
 
     VkImageView createImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
 
@@ -30,15 +30,15 @@ class VulkanUtils
 
     VkFormat findDepthFormat(VkPhysicalDevice physicalDevice);
 
-    VkFormat findSupportedFormat(VkPhysicalDevice physicalDevice, const std::vector<VkFormat> &candidates, VkImageTiling tiling,
-                                 VkFormatFeatureFlags features);
+    VkFormat findSupportedFormat(VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates,
+                                 VkImageTiling tiling, VkFormatFeatureFlags features);
 
     VkCommandBuffer beginSingleTimeCommands(VkDevice device, VkCommandPool commandPool);
 
     void endSingleTimeCommands(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue,
                                VkCommandBuffer commandBuffer);
     void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
-                      VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory);
+                      VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
 
     void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, VkBuffer srcBuffer,
                     VkBuffer dstBuffer, VkDeviceSize size);
@@ -46,6 +46,7 @@ class VulkanUtils
     std::string readFileToString(const std::string& filename);
 
     VkShaderModule createShaderModule(VkDevice device, VkShaderModuleCreateInfo& createInfo);
+
   private:
     // 私有构造函数，确保外部无法实例化
     VulkanUtils() = default;

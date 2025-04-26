@@ -75,8 +75,8 @@ private:
         resourceManager.loadModel(MODEL_PATH, MTL_PATH);
         resourceManager.init(device, physicalDevice, commandManager);
 
-        renderPipeline.init(device, physicalDevice, swapChainManager, resourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
-        renderTarget.init(device, physicalDevice, swapChainManager, renderPipeline.getRenderPass());
+        renderPipeline.init(vulkanContext, swapChainManager, resourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+        renderTarget.init(vulkanContext, swapChainManager, renderPipeline.getRenderPass());
         
         shadowMapping.init(device, physicalDevice, resourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
         renderPipeline.setup(shadowMapping);
@@ -142,7 +142,7 @@ private:
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             swapChainManager.recreateSwapChain();
-            renderTarget.recreateRenderTarget(swapChainManager, renderPipeline.getRenderPass());
+            renderTarget.recreateRenderTarget(vulkanContext, swapChainManager, renderPipeline.getRenderPass());
             return;
         }
         else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -197,7 +197,7 @@ private:
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || windowManager.isFramebufferResized()) {
             windowManager.setFramebufferResized(false);
             swapChainManager.recreateSwapChain();
-            renderTarget.recreateRenderTarget(swapChainManager, renderPipeline.getRenderPass());
+            renderTarget.recreateRenderTarget(vulkanContext, swapChainManager, renderPipeline.getRenderPass());
         }
         else if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to present swap chain image!");

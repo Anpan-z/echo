@@ -70,6 +70,7 @@ void main() {
     vec3 lighting = (ambient +  (1.0-shadow)*diffuse + specular) * fragColor;
 
     outColor = vec4(lighting, 1.0);
+    outColor.rgb = pow(outColor.rgb, vec3(1.0/2.2));
     //outColor = vec4(vec3(shadow), 1.0);
     //outColor = vec4(fragNormal * 0.5 + 0.5, 1.0);
 }
