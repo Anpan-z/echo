@@ -36,7 +36,7 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
 
 void main() {
     //outColor = vec4(fragColor * texture(texSampler, fragTexCoord).rgb, 1.0);
-
+    
     //vec3 lightPos = vec3(-0.1, 0.2, 0.2); // 上方光源
     vec3 lightPos = vec3(0, 1.5, 0); // 上方光源
     vec3 lightColor = vec3(1.0);         // 白光
@@ -47,7 +47,8 @@ void main() {
     //vec3 fragNormal = vec3(0, 1, 0);
 
     // 输入向量
-    vec3 normal = normalize(fragNormal);
+    vec3 flipNormal = dot(fragNormal, normalize(viewPos - fragPos)) > 0.0 ? fragNormal : -fragNormal; // 反转法线 
+    vec3 normal = normalize(flipNormal);
     //vec3 lightDir = normalize(lightPos - fragPos);
     vec3 lightDir = normalize(vec3(1, 1, 1)); 
     vec3 viewDir = normalize(viewPos - fragPos);
@@ -67,7 +68,7 @@ void main() {
     float shadow = ShadowCalculation(fragPosLightSpace, normal, lightDir);
     vec3 color = (ambient +  diffuse + specular) * fragColor;
 
-    vec3 lighting = (ambient +  (1.0-shadow)*diffuse + specular) * fragColor;
+    vec3 lighting = (ambient +  (1.0-shadow)*(diffuse + specular)) * fragColor;
 
     outColor = vec4(lighting, 1.0);
     //outColor = vec4(vec3(shadow), 1.0);

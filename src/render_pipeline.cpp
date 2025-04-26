@@ -224,7 +224,7 @@ void RenderPipeline::createGraphicsPipeline() {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE; // 启用双面绘制，不剔除背面
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;//顺时针为正面
     rasterizer.depthBiasEnable = VK_FALSE;
 
