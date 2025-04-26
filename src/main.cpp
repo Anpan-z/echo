@@ -3,6 +3,7 @@
 #include <GLFW/glfw3.h>
 
 #include "window_manager.hpp"
+#include "input_manager.hpp"
 #include "shadow_mapping.hpp"
 #include "resource_manager.hpp"
 #include "render_pipeline.hpp"
@@ -50,6 +51,7 @@ private:
     uint32_t currentFrame = 0;
 
     WindowManager windowManager;
+    InputManager inputManager;
     ShadowMapping shadowMapping;
     RenderPipeline renderPipeline;
     CommandManager commandManager;
@@ -94,11 +96,11 @@ private:
         while (!windowManager.shouldClose()) {
             windowManager.pollEvents();
 
-            float currentFrame = glfwGetTime();
+            float currentFrame = static_cast<float>(glfwGetTime());
             deltaTime = currentFrame - lastFrame;
             lastFrame = currentFrame;
             
-            processInput(windowManager.getWindow(), camera, deltaTime);
+            inputManager.processInput(windowManager.getWindow(), camera, deltaTime, WIDTH, HEIGHT);
 
             drawFrame();
         }
@@ -182,7 +184,7 @@ private:
         submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
 
-        submitInfo.commandBufferCount = commandBuffers.size();
+        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
         submitInfo.pCommandBuffers = commandBuffers.data();
 
         VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
@@ -219,48 +221,6 @@ private:
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
-    void processInput(GLFWwindow* window, Camera& camera, float deltaTime) {
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-            camera.processKeyboard(CameraMovement::FORWARD, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-            camera.processKeyboard(CameraMovement::BACKWARD, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-            camera.processKeyboard(CameraMovement::LEFT, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-            camera.processKeyboard(CameraMovement::RIGHT, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) // 空格键上升
-            camera.processKeyboard(CameraMovement::UP, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) // Ctrl 键下降
-            camera.processKeyboard(CameraMovement::DOWN, deltaTime);
-        // 鼠标输入处理
-        static bool firstMouse = true;
-        static float lastX = WIDTH / 2.0f;
-        static float lastY = HEIGHT / 2.0f;
-    
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED); // 隐藏光标
-            double xpos, ypos;
-            glfwGetCursorPos(window, &xpos, &ypos);
-    
-            if (firstMouse) {
-                lastX = xpos;
-                lastY = ypos;
-                firstMouse = false;
-            }
-    
-            float xoffset = xpos - lastX;
-            float yoffset = lastY - ypos; // 注意这里是反的，因为 Y 坐标是从下往上的
-    
-            lastX = xpos;
-            lastY = ypos;
-    
-            camera.processMouseMovement(xoffset, yoffset, true);
-        } else {
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL); // 显示光标
-            // 如果鼠标未按下，重置 firstMouse，避免跳跃
-            firstMouse = true;
-        }
-    }
 };
 
 
