@@ -65,7 +65,7 @@ void ImGuiManager::cleanup() {
 void ImGuiManager::recreatWindow() {
     textureCache.clear();
     textures.clear();
-    ImGui::SetNextWindowSize(ImVec2((float)swapChainManager->getSwapChainExtent().width, (float)swapChainManager->getSwapChainExtent().height));
+    // ImGui::SetNextWindowSize(ImVec2((float)swapChainManager->getSwapChainExtent().width, (float)swapChainManager->getSwapChainExtent().height));
 }
 
 void ImGuiManager::beginFrame() {
@@ -88,7 +88,7 @@ void ImGuiManager::addTexture(const VkImageView* imageView, VkSampler sampler, V
     // return textureID;
 }
 
-VkCommandBuffer ImGuiManager::render(uint32_t currentframe, VkFramebuffer framebuffer) {
+VkCommandBuffer ImGuiManager::recordCommandbuffer(uint32_t currentframe, VkFramebuffer framebuffer) {
     VkCommandBuffer commandBuffer = commandBuffers[currentframe];
 
     // 开始命令缓冲区录制
@@ -210,21 +210,51 @@ void ImGuiManager::createRenderPass() {
     }
 }
 
-VkCommandBuffer ImGuiManager::recordCommandbuffer(uint32_t currentFrame, VkFramebuffer Framebuffer){
+VkExtent2D ImGuiManager::renderImGuiInterface(){
     beginFrame();
+    
+    if (ImGui::BeginMainMenuBar())
+    {
+        if (ImGui::BeginMenu("File"))
+        {
+            if (ImGui::MenuItem("Open", "Ctrl+O")) { /* Handle open */ }
+            if (ImGui::MenuItem("Save", "Ctrl+S")) { /* Handle save */ }
+            if (ImGui::MenuItem("Exit")) { /* Handle exit */ }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMainMenuBar();
+    }
+
+    float menuBarHeight = ImGui::GetFrameHeight(); // 通常是菜单栏高度
+    ImGui::SetNextWindowPos(ImVec2(0, menuBarHeight)); // 避开菜单栏
 
     // 设置 ImGui 窗口的位置和大小
-    ImGui::SetNextWindowPos(ImVec2(0, 0)); // 窗口左上角对齐
-    ImGui::SetNextWindowSize(ImVec2((float)swapChainManager->getSwapChainExtent().width, (float)swapChainManager->getSwapChainExtent().height)); // 窗口大小与 GLFW 窗口一致
+    // ImGui::SetNextWindowPos(ImVec2(0, 0)); // 窗口左上角对齐
+    ImGui::SetNextWindowSize(ImVec2((float)swapChainManager->getSwapChainExtent().width, (float)swapChainManager->getSwapChainExtent().height - menuBarHeight)); // 窗口大小减去菜单栏高度
+    // ImGui::SetNextWindowBgAlpha(0.0f); // 设置窗口背景透明度为 0.0f
 
     // 渲染 ImGui 界面
-    ImGui::Begin("Hello, ImGui!", nullptr, ImGuiWindowFlags_NoResize);
+    ImGui::Begin("Hello, ImGui!", nullptr, ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoDecoration);
     // 获取窗口可用内容区域（减去标题栏等）
-    ImVec2 contentSize = ImGui::GetContentRegionAvail();
+    ImVec2 availableSize = ImGui::GetContentRegionAvail();
     // ImGui::Text("This is a Vulkan ImGui example.");
-    ImGui::Image(offScreenTextureId, ImVec2(swapChainManager->getSwapChainExtent().width, swapChainManager->getSwapChainExtent().height)); // offScreenTextureId 是注册的纹理 ID
-    // ImGui::Image(offScreenTextureId, ImVec2((float)swapChainManager->getSwapChainExtent().width, (float)swapChainManager->getSwapChainExtent().height)); // offScreenTextureId 是注册的纹理 ID
-    // ImGui::Image(offScreenTextureId, contentSize); // offScreenTextureId 是注册的纹理 ID
+    ImVec2 imageSize = availableSize;
+    // 计算纹理的宽高比
+    ImVec2 textureSize = ImVec2((float)swapChainManager->getSwapChainExtent().width, (float)swapChainManager->getSwapChainExtent().height); // 纹理的原始尺寸
+    float aspectRatio = textureSize.x / textureSize.y;
+    if (availableSize.x / availableSize.y > aspectRatio) {
+        imageSize.x = availableSize.y * aspectRatio;
+    } else {
+        imageSize.y = availableSize.x / aspectRatio;
+    }
+    // 居中偏移（保留四周 padding）
+    ImVec2 cursorPos = ImGui::GetCursorPos();
+    ImVec2 offset;
+    offset.x = (availableSize.x - imageSize.x) * 0.5f;
+    offset.y = (availableSize.y - imageSize.y) * 0.5f;
+    ImGui::SetCursorPos(ImVec2(cursorPos.x + offset.x, cursorPos.y + offset.y));
+    // 显示纹理
+    ImGui::Image(offScreenTextureId, imageSize); // offScreenTextureId 是注册的纹理 ID
     ImGui::End();
-    return render(currentFrame, Framebuffer);
+    return {static_cast<uint32_t>(availableSize.x), static_cast<uint32_t>(availableSize.y)};
 }

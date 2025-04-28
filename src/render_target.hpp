@@ -9,14 +9,15 @@ public:
     void init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager, VkRenderPass renderPass, VkRenderPass offScreenRenderPass);
     void cleanup();
 
-    void recreateRenderTarget(SwapChainManager& swapChainManager, VkRenderPass renderPass, VkRenderPass offScreenRenderPass) {
+    void recreateRenderTarget() {
         cleanup();
-        init(device, physicalDevice, swapChainManager, renderPass, offScreenRenderPass);
+        createOffScreenTarget(swapChainManager->getSwapChainExtent(), offScreenRenderPass);
+        createPresentTarget(swapChainManager->getSwapChainImageViews(), presentRenderPass);
     }
     void createOffScreenTarget(VkExtent2D imageExtent, VkRenderPass offScreenRenderPass){
         createDepthResources(imageExtent);
         createOffScreenResources(imageExtent);
-        createOffScreenFramebuffers(offScreenRenderPass);
+        createOffScreenFramebuffers(offScreenRenderPass, imageExtent);
         createOffScreenSampler();
     }
     void createPresentTarget(const std::vector<VkImageView>& swapChainImageViews, VkRenderPass renderPass){
@@ -34,6 +35,9 @@ private:
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     SwapChainManager* swapChainManager = nullptr;
 
+    VkRenderPass presentRenderPass = VK_NULL_HANDLE;
+    VkRenderPass offScreenRenderPass = VK_NULL_HANDLE;
+
     std::vector<VkImage> depthImages;
     std::vector<VkDeviceMemory> depthImageMemories;
     std::vector<VkImageView> depthImageViews;
@@ -50,7 +54,7 @@ private:
     void createDepthResources(VkExtent2D imageExtent);
     void createOffScreenResources(VkExtent2D imageExtent);
     void createFramebuffers(const std::vector<VkImageView>& swapChainImageViews, VkRenderPass renderPass);
-    void createOffScreenFramebuffers(VkRenderPass renderPass);
+    void createOffScreenFramebuffers(VkRenderPass renderPass, VkExtent2D imageExtent);
 
     void createOffScreenSampler();
     VkFormat findDepthFormat();

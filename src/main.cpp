@@ -161,7 +161,7 @@ private:
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             swapChainManager.recreateSwapChain();
-            renderTarget.recreateRenderTarget(swapChainManager, renderPipeline.getRenderPass(), imguiManager.getRenderPass());
+            renderTarget.recreateRenderTarget();
             imguiManager.recreatWindow();
             return;
         }
@@ -182,6 +182,7 @@ private:
         auto commandBuffer =  renderPipeline.recordCommandBuffer(currentFrame, renderTarget.getOffScreenFramebuffers()[imageIndex]);
 
         imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        VkExtent2D contentSize = imguiManager.renderImGuiInterface();
         VkCommandBuffer imguiCommandBuffer =  imguiManager.recordCommandbuffer(currentFrame, renderTarget.getFramebuffers()[imageIndex]);
         
         std::array<VkCommandBuffer, 3>commandBuffers = {shadowcommandBuffer, commandBuffer, imguiCommandBuffer};
@@ -223,7 +224,7 @@ private:
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || windowManager.isFramebufferResized()) {
             windowManager.setFramebufferResized(false);
             swapChainManager.recreateSwapChain();
-            renderTarget.recreateRenderTarget(swapChainManager, renderPipeline.getRenderPass(), imguiManager.getRenderPass());
+            renderTarget.recreateRenderTarget();
             imguiManager.recreatWindow();
         }
         else if (result != VK_SUCCESS) {

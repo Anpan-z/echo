@@ -20,7 +20,7 @@ public:
     void beginFrame();
 
     // 渲染 ImGui
-    VkCommandBuffer render(uint32_t currntFrame, VkFramebuffer framebuffer);
+    VkExtent2D renderImGuiInterface();
 
     // 清理 ImGui 资源
     void cleanup();

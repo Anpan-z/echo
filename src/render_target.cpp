@@ -7,11 +7,13 @@ void RenderTarget::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapCh
     this->device = device;
     this->physicalDevice = physicalDevice;
     this->swapChainManager = &swapChainManager;
+    this->offScreenRenderPass = offScreenRenderPass;
+    this->presentRenderPass = renderPass;
 
     createDepthResources(swapChainManager.getSwapChainExtent());
     createFramebuffers(swapChainManager.getSwapChainImageViews(), renderPass);
     createOffScreenResources(swapChainManager.getSwapChainExtent());
-    createOffScreenFramebuffers(offScreenRenderPass);
+    createOffScreenFramebuffers(offScreenRenderPass, swapChainManager.getSwapChainExtent());
     createOffScreenSampler();
 }
 
@@ -87,7 +89,7 @@ void RenderTarget::createFramebuffers(const std::vector<VkImageView>& swapChainI
     }
 }
 
-void RenderTarget::createOffScreenFramebuffers(VkRenderPass renderPass) {
+void RenderTarget::createOffScreenFramebuffers(VkRenderPass renderPass, VkExtent2D imageExtent) {
     offScreenFramebuffers.resize(swapChainManager->getSwapChainImageViews().size());
 
     for (size_t i = 0; i < offScreenFramebuffers.size(); i++) {
@@ -101,8 +103,8 @@ void RenderTarget::createOffScreenFramebuffers(VkRenderPass renderPass) {
         framebufferInfo.renderPass = renderPass;
         framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
         framebufferInfo.pAttachments = attachments.data();
-        framebufferInfo.width = swapChainManager->getSwapChainExtent().width;
-        framebufferInfo.height = swapChainManager->getSwapChainExtent().height;
+        framebufferInfo.width = imageExtent.width;
+        framebufferInfo.height = imageExtent.height;
         framebufferInfo.layers = 1;
 
         if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &offScreenFramebuffers[i]) != VK_SUCCESS) {
