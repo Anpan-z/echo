@@ -3,6 +3,7 @@
 #include <GLFW/glfw3.h>
 
 #include "window_manager.hpp"
+#include "imgui_manager.hpp"
 #include "input_manager.hpp"
 #include "shadow_mapping.hpp"
 #include "resource_manager.hpp"
@@ -52,6 +53,7 @@ private:
 
     WindowManager windowManager;
     InputManager inputManager;
+    ImGuiManager imguiManager;
     ShadowMapping shadowMapping;
     RenderPipeline renderPipeline;
     CommandManager commandManager;
@@ -79,11 +81,12 @@ private:
         commandManager.init(device, vulkanContext);
         resourceManager.loadModel(MODEL_PATH, MTL_PATH);
         resourceManager.init(device, physicalDevice, commandManager);
-
-        renderPipeline.init(device, physicalDevice, swapChainManager, resourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
-        renderTarget.init(device, physicalDevice, swapChainManager, renderPipeline.getRenderPass());
         
         shadowMapping.init(device, physicalDevice, resourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+        renderPipeline.init(device, physicalDevice, swapChainManager, resourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+        imguiManager.init(windowManager.getWindow(), vulkanContext, swapChainManager, commandManager);
+        renderTarget.init(device, physicalDevice, swapChainManager, renderPipeline.getRenderPass(), imguiManager.getRenderPass());
+        
         renderPipeline.setup(shadowMapping);
         
         camera.init();
@@ -121,6 +124,7 @@ private:
             vkDestroyFence(device, inFlightFences[i], nullptr);
         }
 
+        imguiManager.cleanup();
         vulkanContext.cleanup();
         windowManager.cleanup();
     }
@@ -157,7 +161,8 @@ private:
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             swapChainManager.recreateSwapChain();
-            renderTarget.recreateRenderTarget(swapChainManager, renderPipeline.getRenderPass());
+            renderTarget.recreateRenderTarget(swapChainManager, renderPipeline.getRenderPass(), imguiManager.getRenderPass());
+            imguiManager.recreatWindow();
             return;
         }
         else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -170,10 +175,16 @@ private:
         vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
         vkResetCommandBuffer(renderPipeline.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
-        vkResetCommandBuffer(shadowMapping.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);                
+        vkResetCommandBuffer(shadowMapping.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
+        vkResetCommandBuffer(imguiManager.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
+
         auto shadowcommandBuffer = shadowMapping.recordShadowCommandBuffer(currentFrame);
-        auto commandBuffer =  renderPipeline.recordCommandBuffer(currentFrame, renderTarget.getFramebuffers()[imageIndex]);
-        std::array<VkCommandBuffer, 2>commandBuffers = {shadowcommandBuffer, commandBuffer};
+        auto commandBuffer =  renderPipeline.recordCommandBuffer(currentFrame, renderTarget.getOffScreenFramebuffers()[imageIndex]);
+
+        imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        VkCommandBuffer imguiCommandBuffer =  imguiManager.recordCommandbuffer(currentFrame, renderTarget.getFramebuffers()[imageIndex]);
+        
+        std::array<VkCommandBuffer, 3>commandBuffers = {shadowcommandBuffer, commandBuffer, imguiCommandBuffer};
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -212,7 +223,8 @@ private:
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || windowManager.isFramebufferResized()) {
             windowManager.setFramebufferResized(false);
             swapChainManager.recreateSwapChain();
-            renderTarget.recreateRenderTarget(swapChainManager, renderPipeline.getRenderPass());
+            renderTarget.recreateRenderTarget(swapChainManager, renderPipeline.getRenderPass(), imguiManager.getRenderPass());
+            imguiManager.recreatWindow();
         }
         else if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to present swap chain image!");

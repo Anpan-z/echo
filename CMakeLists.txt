@@ -5,9 +5,16 @@ project(ECHO)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-add_subdirectory(external/glfw-3.4)
+if(MSVC)
+    message(STATUS "Using MSVC compiler")
+    set(CMAKE_GENERATOR_TOOLSET "v143") # 指定 MSVC 工具集版本，例如 v143 对应 Visual Studio 2022
+endif(MSVC)
 
 find_package(Vulkan REQUIRED)
+
+add_subdirectory(external/glfw-3.4)
+add_subdirectory(external/imgui)
+
 # set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 # find_package(GLFW REQUIRED)
 
@@ -46,7 +53,7 @@ set(GLFW_LIBRARY glfw)
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${GLM_INCLUDE_DIR} ${STB_INCLUDE_DIR})
 
-target_link_libraries(${PROJECT_NAME} ${Vulkan_LIBRARIES} ${GLFW_LIBRARY})
+target_link_libraries(${PROJECT_NAME} ${Vulkan_LIBRARIES} ${GLFW_LIBRARY} imgui)
 
 # set(SHADER_FILES
 #     shaders/shader.vert
