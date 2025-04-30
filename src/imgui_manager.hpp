@@ -45,6 +45,7 @@ private:
     ImTextureID offScreenTextureId;
 
     VkExtent2D contentExtent;
-    void createDescriptorPool(); 
+    void createDescriptorPool();
     void createRenderPass();
+    void openFileDialog();
 };

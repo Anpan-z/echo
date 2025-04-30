@@ -1,3 +1,5 @@
+#include <windows.h>
+#include <commdlg.h>
 #include "imgui_manager.hpp"
 #include "backends/imgui_impl_vulkan.h"
 #include "backends/imgui_impl_glfw.h"
@@ -210,6 +212,25 @@ void ImGuiManager::createRenderPass() {
     }
 }
 
+void ImGuiManager::openFileDialog() {
+    OPENFILENAMEA ofn;       // 结构体，用于配置对话框
+    char fileName[MAX_PATH] = ""; // 存储选中的文件路径
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = nullptr; // 如果有窗口句柄，可以传入
+    ofn.lpstrFilter = "OBJ Files\0*.obj\0All Files\0*.*\0";
+    ofn.lpstrFile = fileName;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrInitialDir = "..\\model";
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+    if (GetOpenFileNameA(&ofn)) {
+        std::wcout << L"Selected file: " << fileName << std::endl;
+    } else {
+        std::wcout << L"No file selected or dialog canceled." << std::endl;
+    }
+}
+
 VkExtent2D ImGuiManager::renderImGuiInterface(){
     beginFrame();
     
@@ -217,7 +238,9 @@ VkExtent2D ImGuiManager::renderImGuiInterface(){
     {
         if (ImGui::BeginMenu("File"))
         {
-            if (ImGui::MenuItem("Open", "Ctrl+O")) { /* Handle open */ }
+            if (ImGui::MenuItem("Open", "Ctrl+O")) { 
+                openFileDialog(); // 打开文件对话框
+            }
             if (ImGui::MenuItem("Save", "Ctrl+S")) { /* Handle save */ }
             if (ImGui::MenuItem("Exit")) { /* Handle exit */ }
             ImGui::EndMenu();
