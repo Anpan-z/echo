@@ -8,12 +8,14 @@
 #include "command_manager.hpp"
 #include "vulkan_utils.hpp"
 #include <stdexcept>
+#include <filesystem>
 
 
-void ImGuiManager::init(GLFWwindow* window, VulkanContext& vulkanContext, SwapChainManager& swapChainManager, CommandManager& commandManager) {
+void ImGuiManager::init(GLFWwindow* window, VulkanContext& vulkanContext, SwapChainManager& swapChainManager, ResourceManager& resourceManager, CommandManager& commandManager) {
     // 创建 ImGui 上下文
     this->device = vulkanContext.getDevice();
     this->swapChainManager = &swapChainManager;
+    this->resourceManager = &resourceManager;
     this->commandBuffers = commandManager.allocateCommandBuffers(2);
 
     createDescriptorPool();
@@ -212,7 +214,7 @@ void ImGuiManager::createRenderPass() {
     }
 }
 
-void ImGuiManager::openFileDialog() {
+std::string ImGuiManager::openFileDialog() {
     OPENFILENAMEA ofn;       // 结构体，用于配置对话框
     char fileName[MAX_PATH] = ""; // 存储选中的文件路径
     ZeroMemory(&ofn, sizeof(ofn));
@@ -226,6 +228,7 @@ void ImGuiManager::openFileDialog() {
 
     if (GetOpenFileNameA(&ofn)) {
         std::wcout << L"Selected file: " << fileName << std::endl;
+        return std::string(fileName); // 返回选中的文件路径
     } else {
         std::wcout << L"No file selected or dialog canceled." << std::endl;
     }
@@ -239,7 +242,9 @@ VkExtent2D ImGuiManager::renderImGuiInterface(){
         if (ImGui::BeginMenu("File"))
         {
             if (ImGui::MenuItem("Open", "Ctrl+O")) { 
-                openFileDialog(); // 打开文件对话框
+                std::string objFilePath =  openFileDialog(); // 打开文件对话框
+                std::filesystem::path filePath(objFilePath);
+                resourceManager->reloadModel(objFilePath, filePath.parent_path().string());
             }
             if (ImGui::MenuItem("Save", "Ctrl+S")) { /* Handle save */ }
             if (ImGui::MenuItem("Exit")) { /* Handle exit */ }

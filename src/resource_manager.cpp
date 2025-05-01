@@ -166,6 +166,22 @@ void ResourceManager::loadModel(const std::string& modelPath, const std::string&
     }
 }
 
+void ResourceManager::reloadModel(const std::string& modelPath, const std::string& materialPath){
+    vkDeviceWaitIdle(device);
+    vertices.clear();
+    indices.clear();
+    vkDestroyBuffer(device, vertexBuffer, nullptr);
+    vkFreeMemory(device, vertexBufferMemory, nullptr);
+
+    vkDestroyBuffer(device, indexBuffer, nullptr);
+    vkFreeMemory(device, indexBufferMemory, nullptr);
+
+    loadModel(modelPath, materialPath);
+
+    createVertexBuffer();
+    createIndexBuffer();
+}
+
 void ResourceManager::createVertexBuffer() {
     VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 

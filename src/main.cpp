@@ -84,7 +84,7 @@ private:
         
         shadowMapping.init(device, physicalDevice, resourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
         renderPipeline.init(device, physicalDevice, swapChainManager, resourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
-        imguiManager.init(windowManager.getWindow(), vulkanContext, swapChainManager, commandManager);
+        imguiManager.init(windowManager.getWindow(), vulkanContext, swapChainManager, resourceManager, commandManager);
         renderTarget.init(device, physicalDevice, swapChainManager, renderPipeline.getRenderPass(), imguiManager.getRenderPass());
         
         renderPipeline.setup(shadowMapping);
@@ -177,12 +177,13 @@ private:
         vkResetCommandBuffer(renderPipeline.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
         vkResetCommandBuffer(shadowMapping.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
         vkResetCommandBuffer(imguiManager.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
-
+        
+        imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        VkExtent2D contentSize = imguiManager.renderImGuiInterface();
+        
         auto shadowcommandBuffer = shadowMapping.recordShadowCommandBuffer(currentFrame);
         auto commandBuffer =  renderPipeline.recordCommandBuffer(currentFrame, renderTarget.getOffScreenFramebuffers()[imageIndex]);
 
-        imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        VkExtent2D contentSize = imguiManager.renderImGuiInterface();
         VkCommandBuffer imguiCommandBuffer =  imguiManager.recordCommandbuffer(currentFrame, renderTarget.getFramebuffers()[imageIndex]);
         
         std::array<VkCommandBuffer, 3>commandBuffers = {shadowcommandBuffer, commandBuffer, imguiCommandBuffer};

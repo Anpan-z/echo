@@ -10,11 +10,12 @@
 #include "vulkan_context.hpp"
 #include "swap_chain_manager.hpp"
 #include "command_manager.hpp"
+#include "resource_manager.hpp"
 
 class ImGuiManager {
 public:
     // 初始化 ImGui
-    void init(GLFWwindow* window, VulkanContext& vulkanContext, SwapChainManager& swapChainManager, CommandManager& commandManager);
+    void init(GLFWwindow* window, VulkanContext& vulkanContext, SwapChainManager& swapChainManager, ResourceManager& resourceManager, CommandManager& commandManager);
 
     // 开始 ImGui 帧
     void beginFrame();
@@ -33,6 +34,7 @@ public:
     void recreatWindow();
 private:
     SwapChainManager* swapChainManager = nullptr;
+    ResourceManager* resourceManager = nullptr;
     VkDevice device = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkRenderPass renderPass = VK_NULL_HANDLE;
@@ -47,5 +49,5 @@ private:
     VkExtent2D contentExtent;
     void createDescriptorPool();
     void createRenderPass();
-    void openFileDialog();
+    std::string openFileDialog();
 };

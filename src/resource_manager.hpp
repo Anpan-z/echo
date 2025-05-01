@@ -39,6 +39,8 @@ public:
 
     void loadModel(const std::string& modelPath, const std::string& materialPath);
 
+    void reloadModel(const std::string& modelPath, const std::string& materialPath);
+
     void createVertexBuffer();
 
     void createIndexBuffer();
