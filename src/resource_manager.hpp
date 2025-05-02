@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <memory>
 #include "vertex.hpp" // 包含顶点结构体定义
 #include "command_manager.hpp"
 #include "camera.hpp"
@@ -23,6 +24,27 @@ struct UniformBufferObject {
     glm::vec3 cameraPos; // 
     float padding;       // 保持对齐（vec3 + float = 16字节）
     glm::mat4 lightSpaceMatrix;
+};
+
+struct MaterialUniformBufferObject {
+    alignas(16) glm::vec3 albedo;
+    alignas(4)  float metallic;
+    alignas(4)  float roughness;
+    alignas(4)  float ambientOcclusion;
+    alignas(4)  float padding2;  // 对齐
+
+    MaterialUniformBufferObject(
+        const glm::vec3& albedo = glm::vec3(1.0f),
+        float metallic = 0.0f,
+        float roughness = 0.5f,
+        float ambientOcclusion = 1.0f
+    )
+        : albedo(albedo),
+          metallic(metallic),
+          roughness(roughness),
+          ambientOcclusion(ambientOcclusion),
+          padding2(0.0f) 
+    {}
 };
 
 class ResourceManager {
@@ -58,6 +80,14 @@ public:
     const std::vector<VkDeviceMemory>& getUniformBuffersMemory() const{return uniformBuffersMemory;};
 
     const std::vector<void*>& getUniformBuffersMapped() const{return uniformBuffersMapped;};
+
+    const std::vector<VkBuffer>& getMaterialUniformBuffers() const{return materialUniformBuffers;};
+
+    const std::vector<std::string>& getShapeNames() const { return shapeNames; }
+
+    const std::vector<std::shared_ptr<MaterialUniformBufferObject>>& getMaterialUniformBufferObjects() const { return materialUniformBufferObjects; }
+
+    float* getMetallics() const { return metallics; }
     
     VkBuffer getVertexBuffer() const { return vertexBuffer; }
 
@@ -82,6 +112,19 @@ private:
     std::vector<VkDeviceMemory> uniformBuffersMemory;
     std::vector<void*> uniformBuffersMapped;
 
+    std::vector<VkBuffer> materialUniformBuffers;
+    std::vector<VkDeviceMemory> materialUniformBuffersMemory;
+    std::vector<void*> materialUniformBuffersMapped;
+
+    // std::unordered_map<std::string, tinyobj::material_t> materials; // 材质映射
+    // std::unordered_map<std::string, tinyobj::shape_t> shapes; // 形状映射
+    // std::unordered_map<std::string, tinyobj::attrib_t> attribs; // 属性映射
+    
+    float metallicValue = 0.5f;
+    float* metallics = &metallicValue; // 金属度数组
+    std::vector<std::string> shapeNames; // 形状名称数组
+    std::vector<std::shared_ptr<MaterialUniformBufferObject>> materialUniformBufferObjects; // 材质统一缓冲区对象
+    
     // 工具函数
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);

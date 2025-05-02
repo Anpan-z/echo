@@ -258,7 +258,7 @@ VkExtent2D ImGuiManager::renderImGuiInterface(){
 
     // 设置 ImGui 窗口的位置和大小
     // ImGui::SetNextWindowPos(ImVec2(0, 0)); // 窗口左上角对齐
-    ImGui::SetNextWindowSize(ImVec2((float)swapChainManager->getSwapChainExtent().width, (float)swapChainManager->getSwapChainExtent().height - menuBarHeight)); // 窗口大小减去菜单栏高度
+    ImGui::SetNextWindowSize(ImVec2((float)swapChainManager->getSwapChainExtent().width - 300, (float)swapChainManager->getSwapChainExtent().height - menuBarHeight)); // 窗口大小减去菜单栏高度
     // ImGui::SetNextWindowBgAlpha(0.0f); // 设置窗口背景透明度为 0.0f
 
     // 渲染 ImGui 界面
@@ -284,5 +284,55 @@ VkExtent2D ImGuiManager::renderImGuiInterface(){
     // 显示纹理
     ImGui::Image(offScreenTextureId, imageSize); // offScreenTextureId 是注册的纹理 ID
     ImGui::End();
+
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 300, menuBarHeight), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(300, ImGui::GetIO().DisplaySize.y - menuBarHeight), ImGuiCond_Always);
+    ImGui::Begin("Material Editor", nullptr, ImGuiWindowFlags_NoResize);
+
+    std::vector<std::string> shapeNames = resourceManager->getShapeNames();
+    auto materialUniformBufferObjects = resourceManager->getMaterialUniformBufferObjects();
+    // static std::vector<ImVec4> baseColors(shapeNames.size(), ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+    
+    for (size_t i = 0; i < shapeNames.size(); ++i) {
+        if (ImGui::TreeNode(shapeNames[i].c_str())) {
+            auto metallic = &materialUniformBufferObjects[i]->metallic;
+            auto roughness = &materialUniformBufferObjects[i]->roughness;
+            auto ambientOcclusion = &materialUniformBufferObjects[i]->ambientOcclusion;
+            auto baseColors = &materialUniformBufferObjects[i]->albedo;
+
+            ImGui::SliderFloat(("Metallic##" + std::to_string(i)).c_str(), metallic, 0.0f, 1.0f);
+            ImGui::SliderFloat(("Roughness##" + std::to_string(i)).c_str(), roughness, 0.0f, 1.0f);
+            ImGui::SliderFloat(("ambientOcclusion##" + std::to_string(i)).c_str(), ambientOcclusion, 0.0f, 1.0f);
+            ImGui::ColorEdit3(("Base Color##" + std::to_string(i)).c_str(), (float*)baseColors);
+            ImGui::TreePop();
+        }
+    }
+    // std::vector<std::string> shapeNames = {"Cube", "Sphere", "Cylinder", "Plane"};
+    // static  int currentShapeIndex = 0;
+    // if (ImGui::BeginCombo("Shape", shapeNames[currentShapeIndex].c_str())) {
+    //     for (int n = 0; n < shapeNames.size(); n++) {
+    //         bool is_selected = (currentShapeIndex == n);
+    //         if (ImGui::Selectable(shapeNames[n].c_str(), is_selected)) {
+    //             currentShapeIndex = n;
+    //         }
+    //         if (is_selected)
+    //             ImGui::SetItemDefaultFocus();
+    //     }
+    //     ImGui::EndCombo();
+    // }
+    static float metallic = 0.0f;
+
+    // 可调节金属度（metallic），范围是 0.0 到 1.0
+    ImGui::SliderFloat("Metallic", resourceManager->getMetallics(), 0.0f, 1.0f);
+    static float ao = 1.0f;
+    ImGui::SliderFloat("AO", &ao, 0.0f, 1.0f);
+    // // 可调节粗糙度（roughness），范围是 0.0 到 1.0
+    // ImGui::SliderFloat("Roughness", nullptr, 0.0f, 1.0f);
+    
+    // // 可选：环境光遮蔽
+    // ImGui::SliderFloat("AO", nullptr, 0.0f, 1.0f);
+    
+    ImGui::End();
+
     return {static_cast<uint32_t>(availableSize.x), static_cast<uint32_t>(availableSize.y)};
 }

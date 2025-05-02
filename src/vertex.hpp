@@ -11,6 +11,7 @@ struct Vertex {
     glm::vec3 pos;
     glm::vec3 color;
     glm::vec3 normal;
+    uint32_t materialID; // 新增材质 ID
 
     // 获取顶点绑定描述
     static VkVertexInputBindingDescription getBindingDescription() {
@@ -23,8 +24,8 @@ struct Vertex {
     }
 
     // 获取顶点属性描述
-    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
+    static std::array<VkVertexInputAttributeDescription, 4> getAttributeDescriptions() {
+        std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions{};
 
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
@@ -40,6 +41,11 @@ struct Vertex {
         attributeDescriptions[2].location = 2;
         attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[2].offset = offsetof(Vertex, normal);
+
+        attributeDescriptions[3].binding = 0;
+        attributeDescriptions[3].location = 3; // 新增材质 ID 的 location
+        attributeDescriptions[3].format = VK_FORMAT_R32_UINT; // 材质 ID 是 uint 类型
+        attributeDescriptions[3].offset = offsetof(Vertex, materialID);
 
         return attributeDescriptions;
     }

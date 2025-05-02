@@ -28,6 +28,10 @@ void ResourceManager::cleanup() {
         vkDestroyBuffer(device, uniformBuffers[i], nullptr);
         vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
     }
+    for (size_t i = 0; i < materialUniformBuffers.size(); i++) {
+        vkDestroyBuffer(device, materialUniformBuffers[i], nullptr);
+        vkFreeMemory(device, materialUniformBuffersMemory[i], nullptr);
+    }
 }
 
 void ResourceManager::generateNormals(tinyobj::attrib_t& attrib, std::vector<tinyobj::shape_t>& shapes) {
@@ -115,7 +119,7 @@ void ResourceManager::loadModel(const std::string& modelPath, const std::string&
     }
     //GenerateNormals(attrib, shapes);
     std::unordered_map<Vertex, uint32_t> uniqueVertices{};
-
+    size_t shapeIndex = 0;
     for (const auto& shape : shapes) {
         size_t indexOffset = 0;
         for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++) {
@@ -153,7 +157,7 @@ void ResourceManager::loadModel(const std::string& modelPath, const std::string&
                 }
 
                 vertex.color = color;
-
+                vertex.materialID = shapeIndex; // 设置材质 ID
                 if (uniqueVertices.count(vertex) == 0) {
                     uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
                     vertices.push_back(vertex);
@@ -163,6 +167,9 @@ void ResourceManager::loadModel(const std::string& modelPath, const std::string&
             }
             indexOffset += fv;
         }
+        shapeIndex += 1;
+        materialUniformBufferObjects.push_back(std::make_shared<MaterialUniformBufferObject>()); // 添加材质统一缓冲区对象
+        shapeNames.push_back(shape.name); // 存储形状名称
     }
 }
 
@@ -170,6 +177,9 @@ void ResourceManager::reloadModel(const std::string& modelPath, const std::strin
     vkDeviceWaitIdle(device);
     vertices.clear();
     indices.clear();
+    shapeNames.clear();
+    materialUniformBufferObjects.clear();
+
     vkDestroyBuffer(device, vertexBuffer, nullptr);
     vkFreeMemory(device, vertexBufferMemory, nullptr);
 
@@ -233,6 +243,20 @@ void ResourceManager::createUniformBuffers(size_t maxFramesInFlight) {
         createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
         vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
     }
+
+    if (shapeNames.empty()) {
+        std::cerr << "Error: No shapes loaded. Cannot create material uniform buffers." << std::endl;
+        return;
+    }
+    // 创建材质统一缓冲区
+    bufferSize = sizeof(MaterialUniformBufferObject) * shapeNames.size(); 
+    materialUniformBuffers.resize(maxFramesInFlight);
+    materialUniformBuffersMemory.resize(maxFramesInFlight);
+    materialUniformBuffersMapped.resize(maxFramesInFlight);
+    for (size_t i = 0; i < maxFramesInFlight; i++) {
+        createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, materialUniformBuffers[i], materialUniformBuffersMemory[i]);
+        vkMapMemory(device, materialUniformBuffersMemory[i], 0, bufferSize, 0, &materialUniformBuffersMapped[i]);
+    }
 }
 
 void ResourceManager::updateUniformBuffer(uint32_t currentFrame, VkExtent2D swapChainExtent, Camera& camera) {
@@ -262,6 +286,16 @@ void ResourceManager::updateUniformBuffer(uint32_t currentFrame, VkExtent2D swap
 
 
     memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
+
+    std::vector<MaterialUniformBufferObject> materialUbo(shapeNames.size());
+
+    for (size_t i = 0; i < shapeNames.size(); i++) {
+        materialUbo[i].albedo = materialUniformBufferObjects[i]->albedo;
+        materialUbo[i].metallic = materialUniformBufferObjects[i]->metallic;
+        materialUbo[i].roughness = materialUniformBufferObjects[i]->roughness;
+        materialUbo[i].ambientOcclusion = materialUniformBufferObjects[i]->ambientOcclusion;
+    }
+    memcpy(materialUniformBuffersMapped[currentFrame], materialUbo.data(), sizeof(MaterialUniformBufferObject) * shapeNames.size());
 }
 
 void ResourceManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {

@@ -127,7 +127,14 @@ void RenderPipeline::createDescriptorSetLayout() {
     shadowMapBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     shadowMapBinding.pImmutableSamplers = nullptr;
 
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, shadowMapBinding };
+    VkDescriptorSetLayoutBinding materialBinding{};
+    materialBinding.binding = 2;
+    materialBinding.descriptorCount = 1;
+    materialBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    materialBinding.pImmutableSamplers = nullptr;
+    materialBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 3> bindings = { uboLayoutBinding, shadowMapBinding, materialBinding };
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());;
@@ -397,6 +404,10 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
 
+        VkDescriptorBufferInfo materialBufferInfo{};
+        materialBufferInfo.buffer = resourceManager->getMaterialUniformBuffers()[i];
+        materialBufferInfo.offset = 0;
+        materialBufferInfo.range = sizeof(MaterialUniformBufferObject) * resourceManager->getShapeNames().size();
         //VkDescriptorImageInfo imageInfo{};
         //imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         //imageInfo.imageView = textureImageView;
@@ -407,7 +418,7 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
         shadowImageInfo.imageView = shadowMapping.getShadowDepthImageView();
         shadowImageInfo.sampler = shadowMapping.getShadowSampler();
 
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+        std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = descriptorSets[i];
@@ -424,6 +435,14 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
         descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[1].descriptorCount = 1;
         descriptorWrites[1].pImageInfo = &shadowImageInfo;
+
+        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[2].dstSet = descriptorSets[i];
+        descriptorWrites[2].dstBinding = 2;
+        descriptorWrites[2].dstArrayElement = 0;
+        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[2].descriptorCount = 1;
+        descriptorWrites[2].pBufferInfo = &materialBufferInfo;
 
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);

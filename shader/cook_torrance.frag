@@ -6,7 +6,21 @@ layout (location = 3) in vec3 fragNormalWorld;
 // layout (location = 2) in vec2 fragUV;
 layout(location = 4) in flat vec3 viewPos;
 layout(location = 5) in vec4 fragPosLightSpace; // 传入的光源空间坐标
+layout(location = 6) in flat uint fragShapeID; // 实例 ID
+
 layout (location = 0) out vec4 outColor;
+
+struct Material {
+    vec3 albedo;
+    float metallic;
+    float roughness;
+    float ambientOcclusion;
+    float padding1; // pad to 16 bytes
+};
+
+layout(binding = 2) uniform MaterialBlock {
+    Material materials[8]; // Max 128 shapes
+}Material_ubo;
 
 // // === Material Parameters ===
 // uniform vec3 albedo = vec3(1.0, 0.0, 0.0);   // Base color
@@ -55,10 +69,12 @@ vec3 FresnelSchlick(float cosTheta, vec3 F0) {
 void main() {
     // === Material Parameters ===
     // vec3 albedo = vec3(1.0, 0.0, 0.0);   // Base color
+    Material mat = Material_ubo.materials[fragShapeID];
+    // Material mat = materials[fragShapeID];
     vec3 albedo = fragColor;   // Base color
-    float metallic = 0.0;
-    float roughness = 0.5;
-    float ambientOcclusion = 1.0;
+    float metallic = mat.metallic;
+    float roughness = mat.roughness;
+    float ambientOcclusion = mat.ambientOcclusion;
 
     // === Camera & Light ===
     vec3 cameraPosition = viewPos;
