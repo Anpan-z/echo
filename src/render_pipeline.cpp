@@ -142,7 +142,7 @@ void RenderPipeline::createGraphicsPipeline() {
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
 
     std::string vertex_shader_code_path = "../shader/shader.vert";
-    std::string fragment_shader_code_path = "../shader/shader.frag";
+    std::string fragment_shader_code_path = "../shader/cook_torrance.frag";
 
     std::string vs = vulkanUtils.readFileToString(vertex_shader_code_path);
     shaderc::Compiler compiler;

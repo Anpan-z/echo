@@ -1,0 +1,105 @@
+#version 450
+
+layout(location = 0) in vec3 fragColor;
+layout (location = 2) in vec3 fragPositionWorld;
+layout (location = 3) in vec3 fragNormalWorld;
+// layout (location = 2) in vec2 fragUV;
+layout(location = 4) in flat vec3 viewPos;
+layout(location = 5) in vec4 fragPosLightSpace; // 传入的光源空间坐标
+layout (location = 0) out vec4 outColor;
+
+// // === Material Parameters ===
+// uniform vec3 albedo = vec3(1.0, 0.0, 0.0);   // Base color
+// uniform float metallic = 0.0;
+// uniform float roughness = 0.5;
+// uniform float ambientOcclusion = 1.0;
+
+// // === Camera & Light ===
+// uniform vec3 cameraPosition = viewPos;
+// uniform vec3 lightPosition = fragPosLightSpace;
+// uniform vec3 lightColor = vec3(1.0);
+
+// === Constants ===
+const float PI = 3.14159265359;
+
+// === Helper Functions ===
+float DistributionGGX(vec3 normal, vec3 halfVector, float roughness) {
+    float a      = roughness * roughness;
+    float a2     = a * a;
+    float NdotH  = max(dot(normal, halfVector), 0.0);
+    float NdotH2 = NdotH * NdotH;
+
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    return a2 / (PI * denom * denom);
+}
+
+float GeometrySchlickGGX(float NdotV, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+float GeometrySmith(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness) {
+    float NdotV = max(dot(normal, viewDir), 0.0);
+    float NdotL = max(dot(normal, lightDir), 0.0);
+    float ggx1 = GeometrySchlickGGX(NdotV, roughness);
+    float ggx2 = GeometrySchlickGGX(NdotL, roughness);
+    return ggx1 * ggx2;
+}
+
+vec3 FresnelSchlick(float cosTheta, vec3 F0) {
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+// === Main Shader ===
+void main() {
+    // === Material Parameters ===
+    // vec3 albedo = vec3(1.0, 0.0, 0.0);   // Base color
+    vec3 albedo = fragColor;   // Base color
+    float metallic = 0.0;
+    float roughness = 0.5;
+    float ambientOcclusion = 1.0;
+
+    // === Camera & Light ===
+    vec3 cameraPosition = viewPos;
+    vec3 lightPosition = vec3(0.0, 1.0, 1); // 透视除法
+    vec3 lightColor = vec3(1.0);
+    
+    // 基础向量
+    vec3 normal = normalize(fragNormalWorld);
+    vec3 viewDirection = normalize(cameraPosition - fragPositionWorld);
+    vec3 lightDirection = normalize(lightPosition - fragPositionWorld);
+    vec3 halfVector = normalize(viewDirection + lightDirection);
+
+    // 表面反射率 F0
+    vec3 baseReflectance = vec3(0.04); // 常用于非金属
+    vec3 F0 = mix(baseReflectance, albedo, metallic);
+
+    // 计算各项参数
+    float NDF = DistributionGGX(normal, halfVector, roughness);
+    float G   = GeometrySmith(normal, viewDirection, lightDirection, roughness);
+    vec3  F   = FresnelSchlick(max(dot(halfVector, viewDirection), 0.0), F0);
+
+    // Cook-Torrance BRDF
+    vec3 numerator    = NDF * G * F;
+    float denominator = 4.0 * max(dot(normal, viewDirection), 0.0) * max(dot(normal, lightDirection), 0.0) + 0.001;
+    vec3 specular     = numerator / denominator;
+
+    // 漫反射分量
+    vec3 kS = F;
+    vec3 kD = vec3(1.0) - kS;
+    kD *= 1.0 - metallic; // 金属无漫反射
+
+    float NdotL = max(dot(normal, lightDirection), 0.0);
+    vec3 irradiance = lightColor * NdotL;
+
+    vec3 finalColor = (kD * albedo / PI + specular) * irradiance;
+
+    // 环境光（AO）
+    finalColor = finalColor * ambientOcclusion;
+
+    // Gamma 矫正
+    // finalColor = pow(finalColor, vec3(1.0/2.2));
+
+    outColor = vec4(finalColor, 1.0);
+}
