@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 
+class RenderPipelineModelObserver;
 
 class RenderPipeline {
 public:
@@ -44,6 +45,8 @@ private:
     VkImageView depthImageView;
 
     ResourceManager* resourceManager;
+
+    std::unique_ptr<RenderPipelineModelObserver> pipelineModelReloadObserver;
     // 私有方法
     void createRenderPass();
     void createDescriptorSetLayout();
@@ -55,4 +58,20 @@ private:
 
     void createDescriptorPool(size_t maxFramesInFlight);
     void createDescriptorSets(size_t maxFramesInFlight, ShadowMapping& shadowMapping);
+};
+
+class RenderPipelineModelObserver : public ModelReloadObserver {
+public:
+    RenderPipelineModelObserver(RenderPipeline* renderPipeline) // 使用指向 RenderPipeline 的指针
+        : renderPipeline(renderPipeline) {}
+
+    void onModelReloaded() override {
+        // 当模型重新加载时，更新 RenderPipeline 的描述符集
+        if (renderPipeline) {
+            renderPipeline->updateMaterialDescriptorSets();
+        }
+    }
+
+private:
+    RenderPipeline* renderPipeline; // 持有 RenderPipeline 的指针
 };

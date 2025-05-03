@@ -13,6 +13,9 @@ void RenderPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, Swap
     this->swapChainManager = &swapChainManager;
     this->resourceManager = &resourceManager;
     this->commandBuffers = std::move(shadowCommandBuffers);
+
+    pipelineModelReloadObserver = std::make_unique<RenderPipelineModelObserver>(this);
+    resourceManager.addModelReloadObserver(pipelineModelReloadObserver.get());
     createRenderPass();
 }
 
@@ -34,7 +37,7 @@ void RenderPipeline::cleanup() {
     
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-    
+    pipelineModelReloadObserver.reset();
 }
 
 void RenderPipeline::setup(ShadowMapping& shadowMapping) {

@@ -89,9 +89,6 @@ private:
         
         renderPipeline.setup(shadowMapping);
         
-        resourceManager.onModelReload = [&]() {
-            renderPipeline.updateMaterialDescriptorSets();
-        };
     
 
         camera.init();

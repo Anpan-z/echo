@@ -192,8 +192,8 @@ void ResourceManager::reloadModel(const std::string& modelPath, const std::strin
     createIndexBuffer();
     createUniformBuffers(MAX_FRAMES_IN_FLIGHT); // 重新创建统一缓冲区
 
-    if (onModelReload) {
-        onModelReload();
+    for (auto observer : modelReloadObservers) {
+        observer->onModelReloaded();
     }
 }
 

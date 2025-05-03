@@ -47,13 +47,18 @@ struct MaterialUniformBufferObject {
     {}
 };
 
+class ModelReloadObserver {
+    public:
+        virtual void onModelReloaded() = 0; // 当模型重新加载时的回调
+        virtual ~ModelReloadObserver() = default;
+    };
+
 class ResourceManager {
 public:
     // static ResourceManager& getInstance();
 
     // ResourceManager(const ResourceManager&) = delete;
     // ResourceManager& operator=(const ResourceManager&) = delete;
-    std::function<void()> onModelReload;
 
     void init(VkDevice device, VkPhysicalDevice physicalDevice, CommandManager& commandManager);
     // ~ResourceManager();
@@ -93,6 +98,7 @@ public:
 
     VkBuffer getIndexBuffer() const { return indexBuffer; }
 
+    void addModelReloadObserver(ModelReloadObserver* observer) { modelReloadObservers.push_back(observer);}
 
 private:
     VkDevice device;
@@ -124,6 +130,8 @@ private:
     float* metallics = &metallicValue; // 金属度数组
     std::vector<std::string> shapeNames; // 形状名称数组
     std::vector<std::shared_ptr<MaterialUniformBufferObject>> materialUniformBufferObjects; // 材质统一缓冲区对象
+    
+    std::vector<ModelReloadObserver*> modelReloadObservers; // 存储观察者
     
     // 工具函数
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
