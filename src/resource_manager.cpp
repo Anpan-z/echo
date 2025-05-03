@@ -179,17 +179,22 @@ void ResourceManager::reloadModel(const std::string& modelPath, const std::strin
     indices.clear();
     shapeNames.clear();
     materialUniformBufferObjects.clear();
+    cleanup(); // 清理之前的资源
+    // vkDestroyBuffer(device, vertexBuffer, nullptr);
+    // vkFreeMemory(device, vertexBufferMemory, nullptr);
 
-    vkDestroyBuffer(device, vertexBuffer, nullptr);
-    vkFreeMemory(device, vertexBufferMemory, nullptr);
-
-    vkDestroyBuffer(device, indexBuffer, nullptr);
-    vkFreeMemory(device, indexBufferMemory, nullptr);
+    // vkDestroyBuffer(device, indexBuffer, nullptr);
+    // vkFreeMemory(device, indexBufferMemory, nullptr);
 
     loadModel(modelPath, materialPath);
 
     createVertexBuffer();
     createIndexBuffer();
+    createUniformBuffers(MAX_FRAMES_IN_FLIGHT); // 重新创建统一缓冲区
+
+    if (onModelReload) {
+        onModelReload();
+    }
 }
 
 void ResourceManager::createVertexBuffer() {

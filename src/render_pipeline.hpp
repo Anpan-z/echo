@@ -23,6 +23,7 @@ public:
     VkPipeline getGraphicsPipeline() const { return graphicsPipeline; }
     VkCommandBuffer getCommandBuffer(size_t index) const { return commandBuffers[index]; }
     VkDescriptorPool getDescriptorPool() const { return descriptorPool; } 
+    void updateMaterialDescriptorSets();
 
 private:
     VkDevice device = VK_NULL_HANDLE;

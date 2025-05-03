@@ -53,7 +53,7 @@ public:
 
     // ResourceManager(const ResourceManager&) = delete;
     // ResourceManager& operator=(const ResourceManager&) = delete;
-
+    std::function<void()> onModelReload;
 
     void init(VkDevice device, VkPhysicalDevice physicalDevice, CommandManager& commandManager);
     // ~ResourceManager();
