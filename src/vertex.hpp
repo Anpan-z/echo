@@ -50,6 +50,17 @@ struct Vertex {
         return attributeDescriptions;
     }
 
+    static std::array<VkVertexInputAttributeDescription, 1> getShadowMapAttributeDescriptions(){
+        std::array<VkVertexInputAttributeDescription, 1> attributeDescriptions{};
+
+        attributeDescriptions[0].binding = 0;
+        attributeDescriptions[0].location = 0;
+        attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescriptions[0].offset = offsetof(Vertex, pos);
+
+        return attributeDescriptions;
+    }
+
     // 重载比较运算符
     bool operator==(const Vertex& other) const {
         return pos == other.pos && color == other.color && normal == other.normal;
