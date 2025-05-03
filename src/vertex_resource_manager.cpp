@@ -1,4 +1,4 @@
-#include "resource_manager.hpp"
+#include "vertex_resource_manager.hpp"
 #include "vulkan_utils.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <stdexcept>
@@ -7,7 +7,7 @@
 #define TINYOBJLOADER_IMPLEMENTATION  // 在一个源文件中定义 tinyobj_loader 的实现
 #include <tiny_obj_loader.h> // 包含 tinyobj_loader 库
 
-void ResourceManager::init(VkDevice device, VkPhysicalDevice physicalDevice, CommandManager& commandManager) {
+void VertexResourceManager::init(VkDevice device, VkPhysicalDevice physicalDevice, CommandManager& commandManager) {
     this->device = device;
     this->physicalDevice = physicalDevice;
     this->commandManager = &commandManager;
@@ -17,7 +17,7 @@ void ResourceManager::init(VkDevice device, VkPhysicalDevice physicalDevice, Com
     createUniformBuffers(MAX_FRAMES_IN_FLIGHT);
 }
 
-void ResourceManager::cleanup() {
+void VertexResourceManager::cleanup() {
     vkDestroyBuffer(device, vertexBuffer, nullptr);
     vkFreeMemory(device, vertexBufferMemory, nullptr);
 
@@ -34,7 +34,7 @@ void ResourceManager::cleanup() {
     }
 }
 
-void ResourceManager::generateNormals(tinyobj::attrib_t& attrib, std::vector<tinyobj::shape_t>& shapes) {
+void VertexResourceManager::generateNormals(tinyobj::attrib_t& attrib, std::vector<tinyobj::shape_t>& shapes) {
     size_t numVertices = attrib.vertices.size() / 3;
     std::vector<glm::vec3> vertexNormals(numVertices, glm::vec3(0.0f));
 
@@ -101,7 +101,7 @@ void ResourceManager::generateNormals(tinyobj::attrib_t& attrib, std::vector<tin
     std::cout << "Generated smooth normals for " << numVertices << " vertices." << std::endl;
 }
 
-void ResourceManager::loadModel(const std::string& modelPath, const std::string& materialPath) {
+void VertexResourceManager::loadModel(const std::string& modelPath, const std::string& materialPath) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
@@ -173,7 +173,7 @@ void ResourceManager::loadModel(const std::string& modelPath, const std::string&
     }
 }
 
-void ResourceManager::reloadModel(const std::string& modelPath, const std::string& materialPath){
+void VertexResourceManager::reloadModel(const std::string& modelPath, const std::string& materialPath){
     vkDeviceWaitIdle(device);
     vertices.clear();
     indices.clear();
@@ -197,7 +197,7 @@ void ResourceManager::reloadModel(const std::string& modelPath, const std::strin
     }
 }
 
-void ResourceManager::createVertexBuffer() {
+void VertexResourceManager::createVertexBuffer() {
     VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
     VkBuffer stagingBuffer;
@@ -217,7 +217,7 @@ void ResourceManager::createVertexBuffer() {
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void ResourceManager::createIndexBuffer() {
+void VertexResourceManager::createIndexBuffer() {
     VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
     VkBuffer stagingBuffer;
@@ -237,7 +237,7 @@ void ResourceManager::createIndexBuffer() {
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void ResourceManager::createUniformBuffers(size_t maxFramesInFlight) {
+void VertexResourceManager::createUniformBuffers(size_t maxFramesInFlight) {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject); // 假设统一缓冲区存储矩阵
 
     uniformBuffers.resize(maxFramesInFlight);
@@ -264,7 +264,7 @@ void ResourceManager::createUniformBuffers(size_t maxFramesInFlight) {
     }
 }
 
-void ResourceManager::updateUniformBuffer(uint32_t currentFrame, VkExtent2D swapChainExtent, Camera& camera) {
+void VertexResourceManager::updateUniformBuffer(uint32_t currentFrame, VkExtent2D swapChainExtent, Camera& camera) {
     // static auto startTime = std::chrono::high_resolution_clock::now();
 
     // auto currentTime = std::chrono::high_resolution_clock::now();
@@ -303,7 +303,7 @@ void ResourceManager::updateUniformBuffer(uint32_t currentFrame, VkExtent2D swap
     memcpy(materialUniformBuffersMapped[currentFrame], materialUbo.data(), sizeof(MaterialUniformBufferObject) * shapeNames.size());
 }
 
-void ResourceManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+void VertexResourceManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = size;
@@ -329,7 +329,7 @@ void ResourceManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, 
     vkBindBufferMemory(device, buffer, bufferMemory, 0);
 }
 
-void ResourceManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+void VertexResourceManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
     VkCommandBuffer commandBuffer = commandManager->beginSingleTimeCommands();
 
     VkBufferCopy copyRegion{};

@@ -6,7 +6,7 @@
 #include "imgui_manager.hpp"
 #include "input_manager.hpp"
 #include "shadow_mapping.hpp"
-#include "resource_manager.hpp"
+#include "vertex_resource_manager.hpp"
 #include "render_pipeline.hpp"
 #include "vulkan_utils.hpp"
 #include "command_manager.hpp"
@@ -60,7 +60,7 @@ private:
     VulkanContext vulkanContext;
     SwapChainManager swapChainManager;
     RenderTarget renderTarget;
-    ResourceManager resourceManager;
+    VertexResourceManager vertexResourceManager;
 
     Camera camera;
     
@@ -79,12 +79,12 @@ private:
         swapChainManager.init(device, vulkanContext, windowManager.getWindow());
 
         commandManager.init(device, vulkanContext);
-        resourceManager.loadModel(MODEL_PATH, MTL_PATH);
-        resourceManager.init(device, physicalDevice, commandManager);
+        vertexResourceManager.loadModel(MODEL_PATH, MTL_PATH);
+        vertexResourceManager.init(device, physicalDevice, commandManager);
         
-        shadowMapping.init(device, physicalDevice, resourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
-        renderPipeline.init(device, physicalDevice, swapChainManager, resourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
-        imguiManager.init(windowManager.getWindow(), vulkanContext, swapChainManager, resourceManager, commandManager);
+        shadowMapping.init(device, physicalDevice, vertexResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+        renderPipeline.init(device, physicalDevice, swapChainManager, vertexResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+        imguiManager.init(windowManager.getWindow(), vulkanContext, swapChainManager, vertexResourceManager, commandManager);
         renderTarget.init(device, physicalDevice, swapChainManager, renderPipeline.getRenderPass(), imguiManager.getRenderPass());
         
         renderPipeline.setup(shadowMapping);
@@ -114,7 +114,7 @@ private:
 
     void cleanup() {
         shadowMapping.cleanup();
-        resourceManager.cleanup();
+        vertexResourceManager.cleanup();
         renderPipeline.cleanup();
         commandManager.cleanup();
         swapChainManager.cleanup();
@@ -172,7 +172,7 @@ private:
         }
 
         shadowMapping.updateShadowUniformBuffer(currentFrame); // update lightSpaceMatrix
-        resourceManager.updateUniformBuffer(currentFrame, swapChainManager.getSwapChainExtent(), camera);
+        vertexResourceManager.updateUniformBuffer(currentFrame, swapChainManager.getSwapChainExtent(), camera);
 
         vkResetFences(device, 1, &inFlightFences[currentFrame]);
 

@@ -2,7 +2,7 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
-#include "resource_manager.hpp"
+#include "vertex_resource_manager.hpp"
 
 
 const uint32_t SHADOW_MAP_WIDTH = 2048;
@@ -14,7 +14,7 @@ struct ShadowUBO {
 
 class ShadowMapping {
 public:
-    void init(VkDevice device, VkPhysicalDevice physicalDevice, ResourceManager& resourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers);
+    void init(VkDevice device, VkPhysicalDevice physicalDevice, VertexResourceManager& vertexResourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers);
     void cleanup();
 
     // void updateShadowUniformBuffer(uint32_t currentFrame, const glm::mat4& lightSpaceMatrix);
@@ -49,7 +49,7 @@ private:
 
     VkSampler shadowSampler;
 
-    ResourceManager* resourceManager;
+    VertexResourceManager* vertexResourceManager;
 
     void createShadowResources();
     void createShadowRenderPass();

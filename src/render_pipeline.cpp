@@ -1,21 +1,21 @@
 #include "render_pipeline.hpp"
 #include "vulkan_utils.hpp"
 #include "vertex.hpp"
-#include "resource_manager.hpp"
+#include "vertex_resource_manager.hpp"
 #include <shaderc/shaderc.hpp>
 #include <stdexcept>
 #include <array>
 #include <span>
 
-void RenderPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager, ResourceManager& resourceManager,std::vector<VkCommandBuffer>&& shadowCommandBuffers) {
+void RenderPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager, VertexResourceManager& vertexResourceManager,std::vector<VkCommandBuffer>&& shadowCommandBuffers) {
     this->device = device;
     this->physicalDevice = physicalDevice;
     this->swapChainManager = &swapChainManager;
-    this->resourceManager = &resourceManager;
+    this->vertexResourceManager = &vertexResourceManager;
     this->commandBuffers = std::move(shadowCommandBuffers);
 
     pipelineModelReloadObserver = std::make_unique<RenderPipelineModelObserver>(this);
-    resourceManager.addModelReloadObserver(pipelineModelReloadObserver.get());
+    vertexResourceManager.addModelReloadObserver(pipelineModelReloadObserver.get());
     createRenderPass();
 }
 
@@ -351,15 +351,15 @@ VkCommandBuffer RenderPipeline::recordCommandBuffer(uint32_t imageIndex, VkFrame
     scissor.extent = swapChainManager->getSwapChainExtent();
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    VkBuffer vertexBuffers[] = { resourceManager->getVertexBuffer() };
+    VkBuffer vertexBuffers[] = { vertexResourceManager->getVertexBuffer() };
     VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
-    vkCmdBindIndexBuffer(commandBuffer, resourceManager->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer(commandBuffer, vertexResourceManager->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[imageIndex], 0, nullptr);
 
-    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(resourceManager->getIndices().size()), 1, 0, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(vertexResourceManager->getIndices().size()), 1, 0, 0, 0);
     //vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -403,14 +403,14 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = resourceManager->getUniformBuffers()[i];
+        bufferInfo.buffer = vertexResourceManager->getUniformBuffers()[i];
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
 
         VkDescriptorBufferInfo materialBufferInfo{};
-        materialBufferInfo.buffer = resourceManager->getMaterialUniformBuffers()[i];
+        materialBufferInfo.buffer = vertexResourceManager->getMaterialUniformBuffers()[i];
         materialBufferInfo.offset = 0;
-        materialBufferInfo.range = sizeof(MaterialUniformBufferObject) * resourceManager->getShapeNames().size();
+        materialBufferInfo.range = sizeof(MaterialUniformBufferObject) * vertexResourceManager->getShapeNames().size();
         //VkDescriptorImageInfo imageInfo{};
         //imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         //imageInfo.imageView = textureImageView;
@@ -456,14 +456,14 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
 void RenderPipeline::updateMaterialDescriptorSets() {
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = resourceManager->getUniformBuffers()[i];
+        bufferInfo.buffer = vertexResourceManager->getUniformBuffers()[i];
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
 
         VkDescriptorBufferInfo materialBufferInfo{};
-        materialBufferInfo.buffer = resourceManager->getMaterialUniformBuffers()[i];
+        materialBufferInfo.buffer = vertexResourceManager->getMaterialUniformBuffers()[i];
         materialBufferInfo.offset = 0;
-        materialBufferInfo.range = sizeof(MaterialUniformBufferObject) * resourceManager->getShapeNames().size();
+        materialBufferInfo.range = sizeof(MaterialUniformBufferObject) * vertexResourceManager->getShapeNames().size();
 
         std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
 

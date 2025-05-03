@@ -10,7 +10,7 @@ class RenderPipelineModelObserver;
 class RenderPipeline {
 public:
     // 初始化和清理方法
-    void init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager, ResourceManager& resourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers);
+    void init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager, VertexResourceManager& vertexResourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers);
     void cleanup();
 
     // 初始化渲染管线
@@ -44,7 +44,7 @@ private:
     VkDeviceMemory depthImageMemory;
     VkImageView depthImageView;
 
-    ResourceManager* resourceManager;
+    VertexResourceManager* vertexResourceManager;
 
     std::unique_ptr<RenderPipelineModelObserver> pipelineModelReloadObserver;
     // 私有方法

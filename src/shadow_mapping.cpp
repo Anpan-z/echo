@@ -13,10 +13,10 @@
 #include <vector>
 #include <span>
 
-void ShadowMapping::init(VkDevice device, VkPhysicalDevice physicalDevice, ResourceManager& resourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers) {
+void ShadowMapping::init(VkDevice device, VkPhysicalDevice physicalDevice, VertexResourceManager& vertexResourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers) {
     this->device = device;
     this->physicalDevice = physicalDevice;
-    this->resourceManager = &resourceManager;
+    this->vertexResourceManager = &vertexResourceManager;
     this->shadowCommandBuffers = std::move(shadowCommandBuffers);
 
 
@@ -397,10 +397,10 @@ VkCommandBuffer ShadowMapping::recordShadowCommandBuffer(uint32_t currentFrame) 
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
 
-    VkBuffer vertexBuffers[] = { resourceManager->getVertexBuffer() };
+    VkBuffer vertexBuffers[] = { vertexResourceManager->getVertexBuffer() };
     VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(commandBuffer, resourceManager->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer(commandBuffer, vertexResourceManager->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdBindDescriptorSets(
         commandBuffer,
@@ -410,7 +410,7 @@ VkCommandBuffer ShadowMapping::recordShadowCommandBuffer(uint32_t currentFrame) 
         0, nullptr
     );
 
-    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(resourceManager->getIndices().size()), 1, 0, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(vertexResourceManager->getIndices().size()), 1, 0, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
 

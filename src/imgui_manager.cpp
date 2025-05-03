@@ -11,11 +11,11 @@
 #include <filesystem>
 
 
-void ImGuiManager::init(GLFWwindow* window, VulkanContext& vulkanContext, SwapChainManager& swapChainManager, ResourceManager& resourceManager, CommandManager& commandManager) {
+void ImGuiManager::init(GLFWwindow* window, VulkanContext& vulkanContext, SwapChainManager& swapChainManager, VertexResourceManager& vertexResourceManager, CommandManager& commandManager) {
     // 创建 ImGui 上下文
     this->device = vulkanContext.getDevice();
     this->swapChainManager = &swapChainManager;
-    this->resourceManager = &resourceManager;
+    this->vertexResourceManager = &vertexResourceManager;
     this->commandBuffers = commandManager.allocateCommandBuffers(2);
 
     createDescriptorPool();
@@ -244,7 +244,7 @@ VkExtent2D ImGuiManager::renderImGuiInterface(){
             if (ImGui::MenuItem("Open", "Ctrl+O")) { 
                 std::string objFilePath =  openFileDialog(); // 打开文件对话框
                 std::filesystem::path filePath(objFilePath);
-                resourceManager->reloadModel(objFilePath, filePath.parent_path().string());
+                vertexResourceManager->reloadModel(objFilePath, filePath.parent_path().string());
             }
             if (ImGui::MenuItem("Save", "Ctrl+S")) { /* Handle save */ }
             if (ImGui::MenuItem("Exit")) { /* Handle exit */ }
@@ -289,8 +289,8 @@ VkExtent2D ImGuiManager::renderImGuiInterface(){
     ImGui::SetNextWindowSize(ImVec2(300, ImGui::GetIO().DisplaySize.y - menuBarHeight), ImGuiCond_Always);
     ImGui::Begin("Material Editor", nullptr, ImGuiWindowFlags_NoResize);
 
-    std::vector<std::string> shapeNames = resourceManager->getShapeNames();
-    auto materialUniformBufferObjects = resourceManager->getMaterialUniformBufferObjects();
+    std::vector<std::string> shapeNames = vertexResourceManager->getShapeNames();
+    auto materialUniformBufferObjects = vertexResourceManager->getMaterialUniformBufferObjects();
     // static std::vector<ImVec4> baseColors(shapeNames.size(), ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
     
     for (size_t i = 0; i < shapeNames.size(); ++i) {
@@ -323,7 +323,7 @@ VkExtent2D ImGuiManager::renderImGuiInterface(){
     static float metallic = 0.0f;
 
     // 可调节金属度（metallic），范围是 0.0 到 1.0
-    ImGui::SliderFloat("Metallic", resourceManager->getMetallics(), 0.0f, 1.0f);
+    ImGui::SliderFloat("Metallic", vertexResourceManager->getMetallics(), 0.0f, 1.0f);
     static float ao = 1.0f;
     ImGui::SliderFloat("AO", &ao, 0.0f, 1.0f);
     // // 可调节粗糙度（roughness），范围是 0.0 到 1.0

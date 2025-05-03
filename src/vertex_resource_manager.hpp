@@ -53,15 +53,15 @@ class ModelReloadObserver {
         virtual ~ModelReloadObserver() = default;
     };
 
-class ResourceManager {
+class VertexResourceManager {
 public:
-    // static ResourceManager& getInstance();
+    // static VertexResourceManager& getInstance();
 
-    // ResourceManager(const ResourceManager&) = delete;
-    // ResourceManager& operator=(const ResourceManager&) = delete;
+    // VertexResourceManager(const VertexResourceManager&) = delete;
+    // VertexResourceManager& operator=(const VertexResourceManager&) = delete;
 
     void init(VkDevice device, VkPhysicalDevice physicalDevice, CommandManager& commandManager);
-    // ~ResourceManager();
+    // ~VertexResourceManager();
     void cleanup();
 
     void loadModel(const std::string& modelPath, const std::string& materialPath);
@@ -138,5 +138,5 @@ private:
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     void generateNormals(tinyobj::attrib_t& attrib, std::vector<tinyobj::shape_t>& shapes);
 
-    // ResourceManager() = default;
+    // VertexResourceManager() = default;
 };
