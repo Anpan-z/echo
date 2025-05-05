@@ -7,6 +7,7 @@
 #include "input_manager.hpp"
 #include "shadow_mapping.hpp"
 #include "vertex_resource_manager.hpp"
+#include "texture_resource_manager.hpp"
 #include "render_pipeline.hpp"
 #include "vulkan_utils.hpp"
 #include "command_manager.hpp"
@@ -14,6 +15,7 @@
 #include "swap_chain_manager.hpp"
 #include "render_target.hpp"
 #include "camera.hpp"
+#include "IBL_renderer.hpp"
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -26,7 +28,7 @@ const uint32_t HEIGHT = 600;
 const std::string MODEL_PATH = "../model/CornellBox/CornellBox-Glossy.obj";
 //const std::string MTL_PATH = "CornellBox-Original.mtl";
 const std::string MTL_PATH = "../model/CornellBox";
-const std::string TEXTURE_PATH = "viking_room.png";
+const std::string TEXTURE_PATH = "../texture/golden_gate_hills_1k.hdr";
 
 // const int MAX_FRAMES_IN_FLIGHT = 2;
 class HelloTriangleApplication {
@@ -61,6 +63,9 @@ private:
     SwapChainManager swapChainManager;
     RenderTarget renderTarget;
     VertexResourceManager vertexResourceManager;
+    TextureResourceManager textureResourceManager;
+
+    IBLRenderer iblRenderer;
 
     Camera camera;
     
@@ -81,6 +86,12 @@ private:
         commandManager.init(device, vulkanContext);
         vertexResourceManager.loadModel(MODEL_PATH, MTL_PATH);
         vertexResourceManager.init(device, physicalDevice, commandManager);
+
+        textureResourceManager.init(device, physicalDevice, graphicsQueue, commandManager);
+        textureResourceManager.loadHDRTexture(TEXTURE_PATH);
+        iblRenderer.init(device, graphicsQueue, commandManager, textureResourceManager);
+        
+        // 创建阴影映射和渲染管线
         
         shadowMapping.init(device, physicalDevice, vertexResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
         renderPipeline.init(device, physicalDevice, swapChainManager, vertexResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
@@ -125,6 +136,9 @@ private:
             vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
             vkDestroyFence(device, inFlightFences[i], nullptr);
         }
+        
+        textureResourceManager.cleanup();
+        iblRenderer.cleanup();
 
         imguiManager.cleanup();
         vulkanContext.cleanup();
@@ -157,7 +171,6 @@ private:
 
     void drawFrame() {
         vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-        
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(device, swapChainManager.getSwapChain(), UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
