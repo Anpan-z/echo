@@ -76,6 +76,8 @@ public:
 
     void updateUniformBuffer(uint32_t currentFrame, VkExtent2D swapChainExtent, Camera& camera);
 
+    void createSkyBoxVertexBuffer();
+
     const std::vector<Vertex>& getVertices() const{return vertices;};
 
     const std::vector<uint32_t>& getIndices() const{return indices;};
@@ -98,6 +100,8 @@ public:
 
     VkBuffer getIndexBuffer() const { return indexBuffer; }
 
+    VkBuffer getSkyBoxVertexBuffer() const { return skyBoxVertexBuffer; }
+
     void addModelReloadObserver(ModelReloadObserver* observer) { modelReloadObservers.push_back(observer);}
 
 private:
@@ -113,6 +117,9 @@ private:
 
     VkBuffer indexBuffer;
     VkDeviceMemory indexBufferMemory;
+
+    VkBuffer skyBoxVertexBuffer;
+    VkDeviceMemory skyBoxVertexBufferMemory;
 
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;

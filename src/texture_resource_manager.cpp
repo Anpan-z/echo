@@ -12,6 +12,11 @@ void TextureResourceManager::init(VkDevice device, VkPhysicalDevice physicalDevi
 
     createEnvironmentMap();
     // createIrradianceMap();
+
+    createEnvironmentMapSampler();
+    createIrradianceMapSampler();
+    createPrefilteredMapSampler();
+    createBRDFLUTSampler();
 }
 
 void TextureResourceManager::cleanup() {
@@ -37,12 +42,17 @@ void TextureResourceManager::cleanup() {
 //     vkDestroyImageView(device, brdfLUTImageView, nullptr);
 //     vkDestroyImage(device, brdfLUTImage, nullptr);
 //     vkFreeMemory(device, brdfLUTImageMemory, nullptr);
+    vkDestroySampler(device, environmentMapSampler, nullptr);
+    vkDestroySampler(device, irradianceMapSampler, nullptr);
+    vkDestroySampler(device, prefilteredMapSampler, nullptr);
+    vkDestroySampler(device, brdfLUTSampler, nullptr);
 }
 
 VkImageView TextureResourceManager::loadHDRTexture(const std::string& hdrPath) {
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
 
     int texWidth, texHeight, texChannels;
+    stbi_set_flip_vertically_on_load(false);
     float* pixels = stbi_loadf(hdrPath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     VkDeviceSize imageSize = texWidth * texHeight * 4 * sizeof(float);;
     
@@ -144,4 +154,129 @@ void TextureResourceManager::createIrradianceMap() {
         VK_IMAGE_VIEW_TYPE_CUBE,
         6 // 立方体贴图的层数
     );
+}
+
+// 环境贴图采样器 (Skybox):
+// 目的：渲染天空盒
+// 各向异性：启用 (VK_TRUE)
+// 各向异性等级：16.0f
+// Mipmap：禁用 (maxLod = 0.0f)
+// 过滤模式：线性
+void TextureResourceManager::createEnvironmentMapSampler() {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR; // 放大过滤
+    samplerInfo.minFilter = VK_FILTER_LINEAR; // 缩小过滤
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; // Mipmap 线性过滤
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // U 方向边界模式
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // V 方向边界模式
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // W 方向边界模式
+    samplerInfo.mipLodBias = 0.0f; // Mipmap 偏移
+    samplerInfo.anisotropyEnable = VK_TRUE; // 启用各向异性过滤
+    samplerInfo.maxAnisotropy = 16; // 最大各向异性等级
+    samplerInfo.compareEnable = VK_FALSE; // 不启用比较操作
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.minLod = 0.0f; // 最小 LOD
+    samplerInfo.maxLod = 0.0f; // 最大 LOD - 不使用 Mipmap
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK; // 边界颜色
+    samplerInfo.unnormalizedCoordinates = VK_FALSE; // 使用标准化纹理坐标
+
+    
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &environmentMapSampler) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create sampler!");
+    }
+}
+
+// 辐射照度采样器 (Irradiance Map):
+// 目的：环境光照计算
+// 各向异性：禁用 (VK_FALSE)
+// 各向异性等级：1
+// Mipmap：禁用 (maxLod = 0.0f)
+// 过滤模式：线性
+void TextureResourceManager::createIrradianceMapSampler() {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR; // 放大过滤
+    samplerInfo.minFilter = VK_FILTER_LINEAR; // 缩小过滤
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; // Mipmap 线性过滤
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // U 方向边界模式
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // V 方向边界模式
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // W 方向边界模式
+    samplerInfo.mipLodBias = 0.0f; // Mipmap 偏移
+    samplerInfo.anisotropyEnable = VK_FALSE; // 关闭各向异性过滤
+    samplerInfo.maxAnisotropy = 1; // 最大各向异性等级
+    samplerInfo.compareEnable = VK_FALSE; // 不启用比较操作
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.minLod = 0.0f; // 最小 LOD
+    samplerInfo.maxLod = 0.0f; // 最大 LOD - 不使用 Mipmap
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK; // 边界颜色
+    samplerInfo.unnormalizedCoordinates = VK_FALSE; // 使用标准化纹理坐标
+
+    
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &irradianceMapSampler) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create sampler!");
+    }
+}
+
+// 预过滤环境贴图采样器 (Prefiltered Environment Map):
+// 目的：基于粗糙度的环境反射
+// 各向异性：禁用 (VK_FALSE)
+// 各向异性等级：1
+// Mipmap：启用 (maxLod = VK_LOD_CLAMP_NONE)
+// 过滤模式：线性
+// 特点：每个 Mipmap 级别代表不同粗糙度
+void TextureResourceManager::createPrefilteredMapSampler() {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR; // 放大过滤
+    samplerInfo.minFilter = VK_FILTER_LINEAR; // 缩小过滤
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; // Mipmap 线性过滤 - 用于不同粗糙度
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // U 方向边界模式
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // V 方向边界模式
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // W 方向边界模式
+    samplerInfo.mipLodBias = 0.0f; // Mipmap 偏移
+    samplerInfo.anisotropyEnable = VK_FALSE; // 关闭各向异性过滤
+    samplerInfo.maxAnisotropy = 1.0f; // 最大各向异性等级
+    samplerInfo.compareEnable = VK_FALSE; // 不启用比较操作
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.minLod = 0.0f; // 最小 LOD
+    samplerInfo.maxLod = VK_LOD_CLAMP_NONE; // 最大 LOD - 使用所有 Mipmap 级别
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK; // 边界颜色
+    samplerInfo.unnormalizedCoordinates = VK_FALSE; // 使用标准化纹理坐标
+
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &prefilteredMapSampler) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create prefiltered map sampler!");
+    }
+}
+
+// BRDF LUT 采样器 (BRDF Look-Up Table):
+// 目的：预计算 BRDF 积分
+// 各向异性：禁用 (VK_FALSE)
+// 各向异性等级：1
+// Mipmap：禁用 (maxLod = 0.0f)
+// 过滤模式：线性
+// 特点：2D 纹理，用于 PBR 光照计算
+void TextureResourceManager::createBRDFLUTSampler() {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR; // 放大过滤
+    samplerInfo.minFilter = VK_FILTER_LINEAR; // 缩小过滤
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST; // Mipmap 线性过滤 - 用于不同粗糙度
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // U 方向边界模式
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // V 方向边界模式
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // W 方向边界模式
+    samplerInfo.mipLodBias = 0.0f; // Mipmap 偏移
+    samplerInfo.anisotropyEnable = VK_FALSE; // 关闭各向异性过滤
+    samplerInfo.maxAnisotropy = 1.0f; // 最大各向异性等级
+    samplerInfo.compareEnable = VK_FALSE; // 不启用比较操作
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.minLod = 0.0f; // 最小 LOD
+    samplerInfo.maxLod = 0.0f; // 最大 LOD - 不使用 Mipmap
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK; // 边界颜色
+    samplerInfo.unnormalizedCoordinates = VK_FALSE; // 使用标准化纹理坐标
+
+    
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &brdfLUTSampler) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create BRDF LUT sampler!");
+    }
 }

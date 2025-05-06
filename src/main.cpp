@@ -94,7 +94,7 @@ private:
         // 创建阴影映射和渲染管线
         
         shadowMapping.init(device, physicalDevice, vertexResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
-        renderPipeline.init(device, physicalDevice, swapChainManager, vertexResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+        renderPipeline.init(device, physicalDevice, swapChainManager, vertexResourceManager, textureResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
         imguiManager.init(windowManager.getWindow(), vulkanContext, swapChainManager, vertexResourceManager, commandManager);
         renderTarget.init(device, physicalDevice, swapChainManager, renderPipeline.getRenderPass(), imguiManager.getRenderPass());
         

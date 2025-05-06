@@ -1,6 +1,7 @@
 #pragma once
 #include "shadow_mapping.hpp"
 #include "swap_chain_manager.hpp"
+#include "texture_resource_manager.hpp"
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <functional>
@@ -10,7 +11,7 @@ class RenderPipelineModelObserver;
 class RenderPipeline {
 public:
     // 初始化和清理方法
-    void init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager, VertexResourceManager& vertexResourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers);
+    void init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager, VertexResourceManager& vertexResourceManager, TextureResourceManager& textureResourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers);
     void cleanup();
 
     // 初始化渲染管线
@@ -44,13 +45,17 @@ private:
     VkDeviceMemory depthImageMemory;
     VkImageView depthImageView;
 
+    VkPipeline skyboxPipeline = VK_NULL_HANDLE;
+
     VertexResourceManager* vertexResourceManager;
+    TextureResourceManager* textureResourceManager;
 
     std::unique_ptr<RenderPipelineModelObserver> pipelineModelReloadObserver;
     // 私有方法
     void createRenderPass();
     void createDescriptorSetLayout();
     void createGraphicsPipeline();
+    void createSkyboxPipeline();
     // void createDepthResources();
     // void createFramebuffers(const std::vector<VkImageView>& swapChainImageViews);
     // void createCommandPool(uint32_t queueFamilyIndex);

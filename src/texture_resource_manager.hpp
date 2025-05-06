@@ -25,6 +25,11 @@ public:
     const VkImageView& getPrefilteredMapImageView() const { return prefilteredMapImageView; }
     const VkImageView& getBRDFLUTImageView() const { return brdfLUTImageView; }
 
+    const VkSampler& getEnvironmentMapSampler() const { return environmentMapSampler; }
+    const VkSampler& getIrradianceMapSampler() const { return irradianceMapSampler; }
+    const VkSampler& getPrefilteredMapSampler() const { return prefilteredMapSampler; }
+    const VkSampler& getBRDFLUTSampler() const { return brdfLUTSampler; }
+
 private:
     VkDevice device;
     VkPhysicalDevice physicalDevice;
@@ -51,4 +56,14 @@ private:
     VkImage brdfLUTImage;
     VkDeviceMemory brdfLUTImageMemory;
     VkImageView brdfLUTImageView;
+
+    VkSampler environmentMapSampler;
+    VkSampler irradianceMapSampler;
+    VkSampler prefilteredMapSampler;
+    VkSampler brdfLUTSampler;
+
+    void createEnvironmentMapSampler();
+    void createIrradianceMapSampler();
+    void createPrefilteredMapSampler();
+    void createBRDFLUTSampler();
 };
