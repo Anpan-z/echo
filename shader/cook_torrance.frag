@@ -82,7 +82,8 @@ void main() {
     vec3 lightColor = vec3(1.0);
     
     // 基础向量
-    vec3 normal = normalize(fragNormalWorld);
+    vec3 flipNormal = dot(fragNormalWorld, normalize(viewPos - fragPositionWorld)) > 0.0 ? fragNormalWorld : -fragNormalWorld; // 反转法线 
+    vec3 normal = normalize(flipNormal);
     vec3 viewDirection = normalize(cameraPosition - fragPositionWorld);
     vec3 lightDirection = normalize(lightPosition - fragPositionWorld);
     vec3 halfVector = normalize(viewDirection + lightDirection);
