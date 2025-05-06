@@ -83,11 +83,9 @@ void IBLRenderer::generateEnvironmentMap(TextureResourceManager& textureResource
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
     
-
-
     vkDestroyPipeline(device, environmentPipeline, nullptr);
+    vkDestroyPipelineLayout(device, environmentMapPipelineLayout, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);
-
 }
 
 void IBLRenderer::generateIrradianceMap(TextureResourceManager& textureResourceManager) {
