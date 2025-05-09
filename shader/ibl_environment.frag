@@ -18,6 +18,10 @@ void main() {
     vec3 dir = normalize(localPos);
     vec2 uv = sampleSphericalMap(dir);
     vec3 color = texture(equirectangularMap, uv).rgb;
+
+    float exposure = 0.5; // 曝光因子，适当调整
+    color = vec3(1.0) - exp(-color * exposure); // 简单的色调映射
+    
     fragColor = vec4(color, 1.0);
     // fragColor = vec4(1.0, 0.0, 1.0, 1.0); // Magenta
 }
