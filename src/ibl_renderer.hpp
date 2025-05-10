@@ -26,7 +26,7 @@ private:
     VkFramebuffer createFramebuffer(VkImageView& imageView, VkRenderPass renderPass, uint32_t width, uint32_t height);
     std::tuple<VkPipeline, VkPipelineLayout> createPipeline(VkRenderPass renderPass, uint32_t size, std::string vertex_shader_code_path, std::string fragment_shader_code_path);
     void createDescriptorSetLayout();
-    VkDescriptorSet createDescriptorSet(VkImageView environmentMapImageView);
+    VkDescriptorSet createDescriptorSet(VkImageView imageView, VkSampler sampler);
     void createDescriptorPool();
     //void createDescriptorSetLayout(VkDescriptorSetLayout& descriptorSetLayout);
     void createSampler();

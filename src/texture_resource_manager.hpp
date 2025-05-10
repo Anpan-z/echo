@@ -22,6 +22,7 @@ public:
     const VkImageView& getEnvironmentMapImageView() const { return environmentMapImageView; }
     const std::array<VkImageView, 6>& getEnvironmentMapFaceImageViews() const { return environmentMapFaceImageViews; }
     const VkImageView& getIrradianceMapImageView() const { return irradianceMapImageView; }
+    const std::array<VkImageView, 6>& getIrradianceMapFaceImageViews() const { return irradianceMapFaceImageViews; }
     const VkImageView& getPrefilteredMapImageView() const { return prefilteredMapImageView; }
     const VkImageView& getBRDFLUTImageView() const { return brdfLUTImageView; }
 
@@ -48,6 +49,7 @@ private:
     VkImage irradianceMapImage;
     VkDeviceMemory irradianceMapImageMemory;
     VkImageView irradianceMapImageView;
+    std::array<VkImageView, 6> irradianceMapFaceImageViews;
 
     VkImage prefilteredMapImage;
     VkDeviceMemory prefilteredMapImageMemory;

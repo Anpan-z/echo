@@ -14,7 +14,7 @@ void IBLRenderer::init(VkDevice device, VkQueue graphicsQueue, CommandManager& c
     createDescriptorPool();
     createDescriptorSetLayout();
     generateEnvironmentMap(textureResourceManager);
-    // generateIrradianceMap(textureResourceManager);
+    generateIrradianceMap(textureResourceManager);
 }
 
 void IBLRenderer::cleanup() {
@@ -72,7 +72,7 @@ void IBLRenderer::generateEnvironmentMap(TextureResourceManager& textureResource
         // vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
     
         // Bind environment map as input
-        VkDescriptorSet descriptorSet = createDescriptorSet(sourceHDRImageView); // Create descriptor set for environment map
+        VkDescriptorSet descriptorSet = createDescriptorSet(sourceHDRImageView, environmentMapSampler); // Create descriptor set for environment map
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, environmentMapPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
     
         vkCmdDraw(commandBuffer, 6, 1, 6*i, 0);
@@ -93,45 +93,49 @@ void IBLRenderer::generateIrradianceMap(TextureResourceManager& textureResourceM
     VkImageView environmentMapImageView = textureResourceManager.getEnvironmentMapImageView();
 
     // VkImage irradianceMapImage = textureResourceManager.getIrradianceMapImage();
-    VkImageView irradianceMapImageView = textureResourceManager.getIrradianceMapImageView();
+    std::array<VkImageView, 6> irradianceMapFaceImageViews = textureResourceManager.getIrradianceMapFaceImageViews();
 
     const uint32_t irradianceMapSize = 32;
 
     VkRenderPass renderPass = createRenderPass(VK_FORMAT_R32G32B32A32_SFLOAT);
-    VkFramebuffer framebuffer = createFramebuffer(irradianceMapImageView, renderPass, irradianceMapSize, irradianceMapSize);
-    std::string vertex_shader_code_path = "../shader/irradiance.vert";
-    std::string fragment_shader_code_path = "../shader/irradiance.frag";
+    std::string vertex_shader_code_path = "../shader/ibl_irradiance.vert";
+    std::string fragment_shader_code_path = "../shader/ibl_irradiance.frag";
+    // std::string fragment_shader_code_path = "../shader/ibl_irradiance.frag";
     auto [irradiancePipeline, irradianceMapPipelineLayout] = createPipeline(renderPass, irradianceMapSize, vertex_shader_code_path, fragment_shader_code_path);
+    
+    for (size_t i = 0; i < irradianceMapFaceImageViews.size(); ++i) {
+        VkFramebuffer framebuffer = createFramebuffer(irradianceMapFaceImageViews[i], renderPass, irradianceMapSize, irradianceMapSize);
+        VkCommandBuffer commandBuffer = commandManager->beginSingleTimeCommands();
+        
+        VkClearValue clearValue{};
+        clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.framebuffer = framebuffer;
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.renderArea.extent = {irradianceMapSize, irradianceMapSize};
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearValue;
+    
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, irradiancePipeline);
+    
+        // Bind environment map as input
+        VkDescriptorSet descriptorSet = createDescriptorSet(environmentMapImageView, textureResourceManager.getIrradianceMapSampler()); // Create descriptor set for environment map
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, irradianceMapPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+    
+        vkCmdDraw(commandBuffer, 6, 1, 6*i, 0);
+        vkCmdEndRenderPass(commandBuffer);
 
-    VkCommandBuffer commandBuffer = commandManager->beginSingleTimeCommands();
+        commandManager->endSingleTimeCommands(commandBuffer);
 
-    VkClearValue clearValue{};
-    clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
 
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = framebuffer;
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = {irradianceMapSize, irradianceMapSize};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearValue;
-
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, irradiancePipeline);
-
-    // Bind environment map as input
-    VkDescriptorSet descriptorSet = createDescriptorSet(environmentMapImageView); // Create descriptor set for environment map
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, irradianceMapPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-
-    vkCmdDraw(commandBuffer, 6, 1, 0, 0);
-    vkCmdEndRenderPass(commandBuffer);
-
-    commandManager->endSingleTimeCommands(commandBuffer);
-
-    vkDestroyFramebuffer(device, framebuffer, nullptr);
-    vkDestroyRenderPass(device, renderPass, nullptr);
     vkDestroyPipeline(device, irradiancePipeline, nullptr);
+    vkDestroyPipelineLayout(device, irradianceMapPipelineLayout, nullptr);
+    vkDestroyRenderPass(device, renderPass, nullptr);
 }
 
 VkRenderPass IBLRenderer::createRenderPass(VkFormat format) {
@@ -386,7 +390,7 @@ void IBLRenderer::createDescriptorSetLayout() {
     }
 }
 
-VkDescriptorSet IBLRenderer::createDescriptorSet(VkImageView environmentMapImageView) {
+VkDescriptorSet IBLRenderer::createDescriptorSet(VkImageView imageView, VkSampler sampler) {
     // 描述符集布局
     // VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     // samplerLayoutBinding.binding = 0;
@@ -419,8 +423,8 @@ VkDescriptorSet IBLRenderer::createDescriptorSet(VkImageView environmentMapImage
 
     // 更新描述符集
     VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageView = environmentMapImageView;
-    imageInfo.sampler = environmentMapSampler; // 创建采样器
+    imageInfo.imageView = imageView;
+    imageInfo.sampler = sampler; // 创建采样器
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkWriteDescriptorSet descriptorWrite{};
@@ -441,14 +445,14 @@ void IBLRenderer::createDescriptorPool() {
     // 定义描述符池大小
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 6; // 支持 3 个采样器
+    poolSize.descriptorCount = 6 * 2; // 支持 3 个采样器
 
     // 创建描述符池
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 6; // 最大支持 3 个描述符集
+    poolInfo.maxSets = 6 * 2; // 最大支持 3 个描述符集
 
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create descriptor pool!");

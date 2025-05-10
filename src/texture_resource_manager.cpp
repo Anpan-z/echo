@@ -11,7 +11,7 @@ void TextureResourceManager::init(VkDevice device, VkPhysicalDevice physicalDevi
     this->commandManager = &commandManager;
 
     createEnvironmentMap();
-    // createIrradianceMap();
+    createIrradianceMap();
 
     createEnvironmentMapSampler();
     createIrradianceMapSampler();
@@ -23,18 +23,21 @@ void TextureResourceManager::cleanup() {
     vkDestroyImageView(device, sourceHDRImageView, nullptr);
     vkDestroyImage(device, sourceHDRImage, nullptr);
     vkFreeMemory(device, sourceHDRImageMemory, nullptr);
-    for (size_t i = 0; i < environmentMapFaceImageViews.size(); i++) {
-        vkDestroyImageView(device, environmentMapFaceImageViews[i], nullptr);
-    }
-
+    
     vkDestroyImageView(device, environmentMapImageView, nullptr);
     vkDestroyImage(device, environmentMapImage, nullptr);
     vkFreeMemory(device, environmentMapImageMemory, nullptr);
-
-//     vkDestroyImageView(device, irradianceMapImageView, nullptr);
-//     vkDestroyImage(device, irradianceMapImage, nullptr);
-//     vkFreeMemory(device, irradianceMapImageMemory, nullptr);
-
+    for (size_t i = 0; i < environmentMapFaceImageViews.size(); i++) {
+        vkDestroyImageView(device, environmentMapFaceImageViews[i], nullptr);
+    }
+    
+    vkDestroyImageView(device, irradianceMapImageView, nullptr);
+    vkDestroyImage(device, irradianceMapImage, nullptr);
+    vkFreeMemory(device, irradianceMapImageMemory, nullptr);
+    for (size_t i = 0; i < irradianceMapFaceImageViews.size(); i++) {
+        vkDestroyImageView(device, irradianceMapFaceImageViews[i], nullptr);
+    }
+    
 //     vkDestroyImageView(device, prefilteredMapImageView, nullptr);
 //     vkDestroyImage(device, prefilteredMapImage, nullptr);
 //     vkFreeMemory(device, prefilteredMapImageMemory, nullptr);
@@ -154,6 +157,17 @@ void TextureResourceManager::createIrradianceMap() {
         VK_IMAGE_VIEW_TYPE_CUBE,
         6 // 立方体贴图的层数
     );
+    for (uint32_t i = 0; i < 6; i++) {
+        irradianceMapFaceImageViews[i] = vulkanUtils.createImageView(
+            device,
+            irradianceMapImage,
+            VK_FORMAT_R32G32B32A32_SFLOAT,
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_VIEW_TYPE_2D, // 每个面是一个 2D 图像
+            1,                     // 每个 ImageView 只访问一个层
+            i                      // 指定访问的层索引（对应立方体贴图的面）
+        );
+    }
 }
 
 // 环境贴图采样器 (Skybox):
