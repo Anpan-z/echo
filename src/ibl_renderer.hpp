@@ -11,6 +11,7 @@ public:
     void cleanup();
     void generateEnvironmentMap(TextureResourceManager& resourceManager);
     void generateIrradianceMap(TextureResourceManager& resourceManager);
+    void generatePrefilteredMap(TextureResourceManager& resourceManager);
 
 private:
     VkDevice device;

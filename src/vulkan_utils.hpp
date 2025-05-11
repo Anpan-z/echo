@@ -19,10 +19,10 @@ class VulkanUtils
     // Vulkan 工具函数
     void createImage(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t width, uint32_t height, VkFormat format,
                      VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image,
-                     VkDeviceMemory &imageMemory,VkImageCreateFlags flags = 0, uint32_t arrayLayers = 1);
+                     VkDeviceMemory &imageMemory,VkImageCreateFlags flags = 0, uint32_t arrayLayers = 1, uint32_t mipLevels = 1);
 
     VkImageView createImageView(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags,VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D,
-                                uint32_t layerCount = 1, uint32_t baseArrayLayer = 0);
+                                uint32_t layerCount = 1, uint32_t baseArrayLayer = 0, uint32_t levelCount = 1, uint32_t baseMipLevel = 0);
 
     void transitionImageLayout(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, VkImage image,
                                VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);

@@ -12,6 +12,7 @@ void TextureResourceManager::init(VkDevice device, VkPhysicalDevice physicalDevi
 
     createEnvironmentMap();
     createIrradianceMap();
+    createPrefilteredMap();
 
     createEnvironmentMapSampler();
     createIrradianceMapSampler();
@@ -38,9 +39,15 @@ void TextureResourceManager::cleanup() {
         vkDestroyImageView(device, irradianceMapFaceImageViews[i], nullptr);
     }
     
-//     vkDestroyImageView(device, prefilteredMapImageView, nullptr);
-//     vkDestroyImage(device, prefilteredMapImage, nullptr);
-//     vkFreeMemory(device, prefilteredMapImageMemory, nullptr);
+    vkDestroyImageView(device, prefilteredMapImageView, nullptr);
+    vkDestroyImage(device, prefilteredMapImage, nullptr);
+    vkFreeMemory(device, prefilteredMapImageMemory, nullptr);
+    for (size_t mipLevel = 0; mipLevel < prefilteredMapFaceImageViews.size(); mipLevel++) {
+        for (size_t face = 0; face < 6; face++) {
+            vkDestroyImageView(device, prefilteredMapFaceImageViews[mipLevel][face], nullptr);
+        }
+    }
+
 
 //     vkDestroyImageView(device, brdfLUTImageView, nullptr);
 //     vkDestroyImage(device, brdfLUTImage, nullptr);
@@ -167,6 +174,61 @@ void TextureResourceManager::createIrradianceMap() {
             1,                     // 每个 ImageView 只访问一个层
             i                      // 指定访问的层索引（对应立方体贴图的面）
         );
+    }
+}
+
+void TextureResourceManager::createPrefilteredMap() {
+    VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
+
+    // 1. 创建预过滤环境贴图的 VkImage 和 VkImageView
+    const uint32_t prefilteredMapSize = 512; // 通常预过滤环境贴图的分辨率较高，例如 512x512 或 1024x1024
+    const uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(prefilteredMapSize))) + 1; // 计算 Mipmap 级别
+    vulkanUtils.createImage(
+        device,
+        physicalDevice,
+        prefilteredMapSize,
+        prefilteredMapSize,
+        VK_FORMAT_R32G32B32A32_SFLOAT,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        prefilteredMapImage,
+        prefilteredMapImageMemory,
+        VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT, 
+        6, // 立方体贴图的层数
+        mipLevels // 设置 Mipmap 级别
+    );
+
+    prefilteredMapImageView = vulkanUtils.createImageView(
+        device,
+        prefilteredMapImage,
+        VK_FORMAT_R32G32B32A32_SFLOAT,
+        VK_IMAGE_ASPECT_COLOR_BIT,
+        VK_IMAGE_VIEW_TYPE_CUBE,
+        6, // 立方体贴图的层数
+        0,
+        mipLevels, // 设置 Mipmap 级别
+        0 // 起始 Mipmap 级别
+    );
+
+    // 2. 初始化数据结构
+    prefilteredMapFaceImageViews.resize(mipLevels);
+
+    // 3. 为每个 Mipmap 等级的每个面创建单独的 VkImageView
+    for (uint32_t mipLevel = 0; mipLevel < mipLevels; ++mipLevel) {
+        for (uint32_t face = 0; face < 6; ++face) {
+            prefilteredMapFaceImageViews[mipLevel][face] = vulkanUtils.createImageView(
+                device,
+                prefilteredMapImage,
+                VK_FORMAT_R32G32B32A32_SFLOAT,
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                VK_IMAGE_VIEW_TYPE_2D, // 每个面是一个 2D 图像
+                1,                     // 每个 ImageView 只访问一个层
+                face,                  // 指定访问的层索引（对应立方体贴图的面）
+                1,                     // 只访问当前 Mipmap 等级
+                mipLevel               // 起始 Mipmap 等级
+            );
+        }
     }
 }
 

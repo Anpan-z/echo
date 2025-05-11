@@ -18,7 +18,8 @@ void VulkanUtils::createImage(
     VkImage& image,
     VkDeviceMemory& imageMemory,
     VkImageCreateFlags flags,
-    uint32_t arrayLayers
+    uint32_t arrayLayers,
+    uint32_t mipLevels // 新增参数：Mipmap 级别
 ) {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -26,7 +27,7 @@ void VulkanUtils::createImage(
     imageInfo.extent.width = width;
     imageInfo.extent.height = height;
     imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
+    imageInfo.mipLevels = mipLevels;
     imageInfo.arrayLayers = arrayLayers;
     imageInfo.format = format;
     imageInfo.tiling = tiling;
@@ -62,7 +63,9 @@ VkImageView VulkanUtils::createImageView(
     VkImageAspectFlags aspectFlags,
     VkImageViewType viewType,
     uint32_t layerCount,
-    uint32_t baseArrayLayer
+    uint32_t baseArrayLayer,
+    uint32_t levelCount,   // 新增参数：Mipmap 级别数量
+    uint32_t baseMipLevel  // 新增参数：起始 Mipmap 级别
 ) {
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -70,8 +73,8 @@ VkImageView VulkanUtils::createImageView(
     viewInfo.viewType = viewType;
     viewInfo.format = format;
     viewInfo.subresourceRange.aspectMask = aspectFlags;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseMipLevel = baseMipLevel;
+    viewInfo.subresourceRange.levelCount = levelCount;
     viewInfo.subresourceRange.baseArrayLayer = baseArrayLayer;
     viewInfo.subresourceRange.layerCount = layerCount;
 

@@ -15,7 +15,7 @@ public:
 
     void createEnvironmentMap();
     void createIrradianceMap();
-    void createPrefilteredMap(VkImage environmentMapImage);
+    void createPrefilteredMap();
     void createBRDFLUT();
 
     const VkImageView& getSourceHDRImageView() const { return sourceHDRImageView; }
@@ -24,6 +24,7 @@ public:
     const VkImageView& getIrradianceMapImageView() const { return irradianceMapImageView; }
     const std::array<VkImageView, 6>& getIrradianceMapFaceImageViews() const { return irradianceMapFaceImageViews; }
     const VkImageView& getPrefilteredMapImageView() const { return prefilteredMapImageView; }
+    const std::vector<std::array<VkImageView, 6>>& getPrefilteredMapFaceImageViews() const { return prefilteredMapFaceImageViews; }
     const VkImageView& getBRDFLUTImageView() const { return brdfLUTImageView; }
 
     const VkSampler& getEnvironmentMapSampler() const { return environmentMapSampler; }
@@ -54,6 +55,7 @@ private:
     VkImage prefilteredMapImage;
     VkDeviceMemory prefilteredMapImageMemory;
     VkImageView prefilteredMapImageView;
+    std::vector<std::array<VkImageView, 6>> prefilteredMapFaceImageViews;
 
     VkImage brdfLUTImage;
     VkDeviceMemory brdfLUTImageMemory;
