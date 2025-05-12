@@ -13,6 +13,7 @@ void TextureResourceManager::init(VkDevice device, VkPhysicalDevice physicalDevi
     createEnvironmentMap();
     createIrradianceMap();
     createPrefilteredMap();
+    createBRDFLUT();
 
     createEnvironmentMapSampler();
     createIrradianceMapSampler();
@@ -48,10 +49,10 @@ void TextureResourceManager::cleanup() {
         }
     }
 
-
-//     vkDestroyImageView(device, brdfLUTImageView, nullptr);
-//     vkDestroyImage(device, brdfLUTImage, nullptr);
-//     vkFreeMemory(device, brdfLUTImageMemory, nullptr);
+    vkDestroyImageView(device, brdfLUTImageView, nullptr);
+    vkDestroyImage(device, brdfLUTImage, nullptr);
+    vkFreeMemory(device, brdfLUTImageMemory, nullptr);
+    
     vkDestroySampler(device, environmentMapSampler, nullptr);
     vkDestroySampler(device, irradianceMapSampler, nullptr);
     vkDestroySampler(device, prefilteredMapSampler, nullptr);
@@ -230,6 +231,32 @@ void TextureResourceManager::createPrefilteredMap() {
             );
         }
     }
+}
+
+void TextureResourceManager::createBRDFLUT(){
+    VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
+
+    // 1. 创建 BRDF LUT 的 VkImage 和 VkImageView
+    const uint32_t brdfLUTMapSize = 512; // 通常 BRDF LUT 的分辨率较高，例如 512x512
+    vulkanUtils.createImage(
+        device,
+        physicalDevice,
+        brdfLUTMapSize,
+        brdfLUTMapSize,
+        VK_FORMAT_R32G32B32A32_SFLOAT,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        brdfLUTImage,
+        brdfLUTImageMemory
+    );
+
+    brdfLUTImageView = vulkanUtils.createImageView(
+        device,
+        brdfLUTImage,
+        VK_FORMAT_R32G32B32A32_SFLOAT,
+        VK_IMAGE_ASPECT_COLOR_BIT
+    );
 }
 
 // 环境贴图采样器 (Skybox):

@@ -13,9 +13,11 @@ void IBLRenderer::init(VkDevice device, VkQueue graphicsQueue, CommandManager& c
     createSampler();
     createDescriptorPool();
     createDescriptorSetLayout();
+
     generateEnvironmentMap(textureResourceManager);
     generateIrradianceMap(textureResourceManager);
     generatePrefilteredMap(textureResourceManager);
+    generateBRDFLUT(textureResourceManager);
 }
 
 void IBLRenderer::cleanup() {
@@ -234,7 +236,65 @@ void IBLRenderer::generatePrefilteredMap(TextureResourceManager& textureResource
     vkDestroyPipelineLayout(device, prefilteredPipelineLayout, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);
 }
+
+void IBLRenderer::generateBRDFLUT(TextureResourceManager& textureResourceManager) {
+    // VkImageView environmentMapImageView = textureResourceManager.getEnvironmentMapImageView();
+    VkImageView brdfLUTImageView = textureResourceManager.getBRDFLUTImageView();
+
+    const uint32_t brdfLUTMapSize = 512;
+
+    VkRenderPass renderPass = createRenderPass(VK_FORMAT_R32G32B32A32_SFLOAT);
+    std::string vertex_shader_code_path = "../shader/ibl_brdflut.vert";
+    std::string fragment_shader_code_path = "../shader/ibl_brdflut.frag";
+    auto [brdfLUTPipeline, brdfLUTPipelineLayout] = createPipeline(renderPass, brdfLUTMapSize, vertex_shader_code_path, fragment_shader_code_path);
     
+    VkFramebuffer framebuffer = createFramebuffer(brdfLUTImageView, renderPass, brdfLUTMapSize, brdfLUTMapSize);
+    VkCommandBuffer commandBuffer = commandManager->beginSingleTimeCommands();
+    
+    VkClearValue clearValue{};
+    clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = renderPass;
+    renderPassInfo.framebuffer = framebuffer;
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = {brdfLUTMapSize, brdfLUTMapSize};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearValue;
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, brdfLUTPipeline);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width  = (float)brdfLUTMapSize;
+    viewport.height = (float)brdfLUTMapSize;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {brdfLUTMapSize, brdfLUTMapSize};
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    // Bind environment map as input
+    // VkDescriptorSet descriptorSet = createDescriptorSet(environmentMapImageView, textureResourceManager.getBRDFLUTSampler()); // Create descriptor set for environment map
+    // vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, brdfLUTPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+
+    vkCmdDraw(commandBuffer, 6, 1, 0, 0);
+    vkCmdEndRenderPass(commandBuffer);
+
+    commandManager->endSingleTimeCommands(commandBuffer);
+
+    vkDestroyFramebuffer(device, framebuffer, nullptr);
+
+
+    vkDestroyPipeline(device, brdfLUTPipeline, nullptr);
+    vkDestroyPipelineLayout(device, brdfLUTPipelineLayout, nullptr);
+    vkDestroyRenderPass(device, renderPass, nullptr);
+}
 
 VkRenderPass IBLRenderer::createRenderPass(VkFormat format) {
     VkAttachmentDescription colorAttachment{};

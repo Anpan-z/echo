@@ -12,6 +12,7 @@ public:
     void generateEnvironmentMap(TextureResourceManager& resourceManager);
     void generateIrradianceMap(TextureResourceManager& resourceManager);
     void generatePrefilteredMap(TextureResourceManager& resourceManager);
+    void generateBRDFLUT(TextureResourceManager& resourceManager);
 
 private:
     VkDevice device;
