@@ -69,6 +69,10 @@ vec3 FresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - cosTheta, 5.0);
+} 
+
 // === Main Shader ===
 void main() {
     // === Material Parameters ===
@@ -117,7 +121,11 @@ void main() {
     vec3 finalColor = (kD * albedo / PI + specular) * irradiance;
 
     // === 环境光照 IBL ===
-    // kS, kD 已计算过
+    F   = fresnelSchlickRoughness(max(dot(normal, viewDirection), 0.0), F0, roughness);
+    kS = F;
+    kD = vec3(1.0) - kS;
+    kD *= 1.0 - metallic; // 金属无漫反射
+
     vec3 R = reflect(-viewDirection, normal);
     R = normalize(R);
 
