@@ -167,7 +167,30 @@ void RenderPipeline::createDescriptorSetLayout() {
     skyBoxBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     skyBoxBinding.pImmutableSamplers = nullptr;
 
-    std::array<VkDescriptorSetLayoutBinding, 4> bindings = { uboLayoutBinding, shadowMapBinding, materialBinding, skyBoxBinding};
+    VkDescriptorSetLayoutBinding irradianceMapBinding{};
+    irradianceMapBinding.binding = 4;
+    irradianceMapBinding.descriptorCount = 1;
+    irradianceMapBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    irradianceMapBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    irradianceMapBinding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutBinding prefilteredMapBinding{};
+    prefilteredMapBinding.binding = 5;
+    prefilteredMapBinding.descriptorCount = 1;
+    prefilteredMapBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    prefilteredMapBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    prefilteredMapBinding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutBinding brdfLUBinding{};
+    brdfLUBinding.binding = 6;
+    brdfLUBinding.descriptorCount = 1;
+    brdfLUBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    brdfLUBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    brdfLUBinding.pImmutableSamplers = nullptr;
+
+
+    std::array<VkDescriptorSetLayoutBinding, 7> bindings = { uboLayoutBinding, shadowMapBinding, materialBinding, skyBoxBinding,
+                                                            irradianceMapBinding, prefilteredMapBinding, brdfLUBinding };   
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());;
@@ -419,15 +442,15 @@ VkCommandBuffer RenderPipeline::recordCommandBuffer(uint32_t imageIndex, VkFrame
 void RenderPipeline::createDescriptorPool(size_t MAX_FRAMES_IN_FLIGHT) {
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2;
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2 + 3 * 2;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2;
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2 + 3 * 2;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2;
+    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2 + 3 * 2;
 
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor pool!");
@@ -472,7 +495,22 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
         skyBoxImageInfo.imageView = textureResourceManager->getEnvironmentMapImageView();
         skyBoxImageInfo.sampler = textureResourceManager->getEnvironmentMapSampler();
 
-        std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
+        VkDescriptorImageInfo irradianceMapInfo{};
+        irradianceMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        irradianceMapInfo.imageView = textureResourceManager->getIrradianceMapImageView();
+        irradianceMapInfo.sampler = textureResourceManager->getIrradianceMapSampler();
+        
+        VkDescriptorImageInfo prefilteredMapInfo{};
+        prefilteredMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        prefilteredMapInfo.imageView = textureResourceManager->getPrefilteredMapImageView();
+        prefilteredMapInfo.sampler = textureResourceManager->getPrefilteredMapSampler();
+        
+        VkDescriptorImageInfo brdfLUTInfo{};
+        brdfLUTInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        brdfLUTInfo.imageView = textureResourceManager->getBRDFLUTImageView();
+        brdfLUTInfo.sampler = textureResourceManager->getBRDFLUTSampler();
+        
+        std::array<VkWriteDescriptorSet, 7> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = descriptorSets[i];
@@ -505,7 +543,30 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
         descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[3].descriptorCount = 1;
         descriptorWrites[3].pImageInfo = &skyBoxImageInfo;
+        
+        descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[4].dstSet = descriptorSets[i];
+        descriptorWrites[4].dstBinding = 4;
+        descriptorWrites[4].dstArrayElement = 0;
+        descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[4].descriptorCount = 1;
+        descriptorWrites[4].pImageInfo = &irradianceMapInfo;
 
+        descriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[5].dstSet = descriptorSets[i];
+        descriptorWrites[5].dstBinding = 5;
+        descriptorWrites[5].dstArrayElement = 0;
+        descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[5].descriptorCount = 1;
+        descriptorWrites[5].pImageInfo = &prefilteredMapInfo;
+
+        descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[6].dstSet = descriptorSets[i];
+        descriptorWrites[6].dstBinding = 6;
+        descriptorWrites[6].dstArrayElement = 0;
+        descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[6].descriptorCount = 1;
+        descriptorWrites[6].pImageInfo = &brdfLUTInfo;
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }

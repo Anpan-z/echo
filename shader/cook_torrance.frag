@@ -22,6 +22,10 @@ layout(binding = 2) uniform MaterialBlock {
     Material materials[8]; // Max 128 shapes
 }Material_ubo;
 
+layout(set = 0, binding = 4) uniform samplerCube irradianceMap; // 辐照度贴图
+layout(set = 0, binding = 5) uniform samplerCube prefilteredMap; // 预过滤环境贴图
+layout(set = 0, binding = 6) uniform sampler2D brdfLUT; // BRDF LUT
+
 // // === Material Parameters ===
 // uniform vec3 albedo = vec3(1.0, 0.0, 0.0);   // Base color
 // uniform float metallic = 0.0;
@@ -112,9 +116,27 @@ void main() {
 
     vec3 finalColor = (kD * albedo / PI + specular) * irradiance;
 
+    // === 环境光照 IBL ===
+    // kS, kD 已计算过
+    vec3 R = reflect(-viewDirection, normal);
+    R = normalize(R);
+
+    // 环境漫反射
+    vec3 irradianceEnv = texture(irradianceMap, normal).rgb;
+    vec3 diffuseEnv = irradianceEnv * albedo;
+
+    // 环境镜面反射（预过滤环境贴图）
+    const float MAX_REFLECTION_LOD = 5.0;
+    vec3 prefilteredColor = textureLod(prefilteredMap, R, roughness * MAX_REFLECTION_LOD).rgb;
+    vec2 brdf = texture(brdfLUT, vec2(max(dot(normal, viewDirection), 0.0), roughness)).rg;
+    vec3 specularEnv = prefilteredColor * (F * brdf.x + brdf.y);
+
+    // 合并环境光分量
+    vec3 ambient = (kD * diffuseEnv + specularEnv) * ambientOcclusion;
+
     // 环境光（AO）
     finalColor = finalColor * ambientOcclusion;
-
+    finalColor += ambient;
     // Gamma 矫正
     // finalColor = pow(finalColor, vec3(1.0/2.2));
 
