@@ -139,7 +139,7 @@ void IBLRenderer::generateIrradianceMap(TextureResourceManager& textureResourceM
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
         // Bind environment map as input
-        VkDescriptorSet descriptorSet = createDescriptorSet(environmentMapImageView, textureResourceManager.getIrradianceMapSampler()); // Create descriptor set for environment map
+        VkDescriptorSet descriptorSet = createDescriptorSet(environmentMapImageView, environmentMapSampler); // Create descriptor set for environment map
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, irradianceMapPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
     
         vkCmdDraw(commandBuffer, 6, 1, 6*i, 0);
@@ -218,7 +218,7 @@ void IBLRenderer::generatePrefilteredMap(TextureResourceManager& textureResource
             vkCmdPushConstants(commandBuffer, prefilteredPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float), &roughness);
 
             // 绑定环境贴图作为输入
-            VkDescriptorSet descriptorSet = createDescriptorSet(environmentMapImageView, textureResourceManager.getPrefilteredMapSampler());
+            VkDescriptorSet descriptorSet = createDescriptorSet(environmentMapImageView, environmentMapSampler);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, prefilteredPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
             // 绘制立方体的当前面
