@@ -57,5 +57,8 @@ Thumbs.db
 Thumbs.db
 desktop.ini
 
+# imgui 生成的文件
+imgui.ini
+
 # Git 忽略规则文件
 #.gitignore
