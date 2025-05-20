@@ -16,6 +16,8 @@
 #include "render_target.hpp"
 #include "camera.hpp"
 #include "IBL_renderer.hpp"
+#include "path_tracing_pipeline.hpp"
+#include "path_tracing_resource_manager.hpp"
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -67,6 +69,9 @@ private:
 
     IBLRenderer iblRenderer;
 
+    PathTracingResourceManager pathTracingResourceManager;
+    PathTracingPipeline pathTracingPipeline;
+
     Camera camera;
     
     void initWindow() {
@@ -89,6 +94,10 @@ private:
 
         textureResourceManager.init(device, physicalDevice, graphicsQueue, commandManager);
         textureResourceManager.loadHDRTexture(TEXTURE_PATH);
+
+        pathTracingResourceManager.init(device, physicalDevice, graphicsQueue, swapChainManager, commandManager, vertexResourceManager);
+        pathTracingPipeline.init(device, physicalDevice, pathTracingResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+
         iblRenderer.init(device, graphicsQueue, commandManager, textureResourceManager);
         
         // 创建阴影映射和渲染管线
@@ -139,6 +148,8 @@ private:
         
         textureResourceManager.cleanup();
         iblRenderer.cleanup();
+        pathTracingPipeline.cleanup();
+        pathTracingResourceManager.cleanup();
 
         imguiManager.cleanup();
         vulkanContext.cleanup();
@@ -186,6 +197,7 @@ private:
 
         shadowMapping.updateShadowUniformBuffer(currentFrame); // update lightSpaceMatrix
         vertexResourceManager.updateUniformBuffer(currentFrame, swapChainManager.getSwapChainExtent(), camera);
+        pathTracingResourceManager.updateCameraDataBuffer(currentFrame, swapChainManager.getSwapChainExtent(), camera);
 
         vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
@@ -193,15 +205,17 @@ private:
         vkResetCommandBuffer(shadowMapping.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
         vkResetCommandBuffer(imguiManager.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
         
-        imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        imguiManager.addTexture(&pathTracingResourceManager.getPathTracingOutputImageviews()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        // imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         VkExtent2D contentSize = imguiManager.renderImGuiInterface();
         
         auto shadowcommandBuffer = shadowMapping.recordShadowCommandBuffer(currentFrame);
         auto commandBuffer =  renderPipeline.recordCommandBuffer(currentFrame, renderTarget.getOffScreenFramebuffers()[imageIndex]);
+        auto pathTracingCommandBuffer = pathTracingPipeline.recordCommandBuffer(currentFrame, imageIndex);
 
         VkCommandBuffer imguiCommandBuffer =  imguiManager.recordCommandbuffer(currentFrame, renderTarget.getFramebuffers()[imageIndex]);
         
-        std::array<VkCommandBuffer, 3>commandBuffers = {shadowcommandBuffer, commandBuffer, imguiCommandBuffer};
+        std::array<VkCommandBuffer, 4>commandBuffers = {shadowcommandBuffer, pathTracingCommandBuffer, commandBuffer, imguiCommandBuffer};
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;

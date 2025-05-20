@@ -1,6 +1,10 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#define GLM_ENABLE_EXPERIMENTAL
+#ifndef GLM_FORCE_DEPTH_ZERO_TO_ONE  
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE  
+#endif
 #include <glm/glm.hpp>
 #include <array>
 #include <cstddef> // for offsetof

@@ -32,18 +32,18 @@ struct MaterialUniformBufferObject {
     alignas(4)  float roughness;
     alignas(4)  float ambientOcclusion;
     alignas(4)  float padding2;  // 对齐
+    alignas(4)  float emission; // 自发光强度
 
     MaterialUniformBufferObject(
-        const glm::vec3& albedo = glm::vec3(1.0f),
-        float metallic = 0.0f,
-        float roughness = 0.5f,
-        float ambientOcclusion = 1.0f
+        glm::vec3 albedo = glm::vec3(1.0f),
+        float emission = 0.0f
     )
         : albedo(albedo),
-          metallic(metallic),
-          roughness(roughness),
-          ambientOcclusion(ambientOcclusion),
-          padding2(0.0f) 
+          metallic(0.0f),
+          roughness(0.5f),
+          ambientOcclusion(1.0f),
+          padding2(0.0f),
+          emission(emission)
     {}
 };
 
@@ -88,7 +88,7 @@ public:
 
     const std::vector<void*>& getUniformBuffersMapped() const{return uniformBuffersMapped;};
 
-    const std::vector<VkBuffer>& getMaterialUniformBuffers() const{return materialUniformBuffers;};
+    std::vector<VkBuffer>& getMaterialUniformBuffers() {return materialUniformBuffers;};
 
     const std::vector<std::string>& getShapeNames() const { return shapeNames; }
 

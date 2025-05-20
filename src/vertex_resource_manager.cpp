@@ -171,7 +171,11 @@ void VertexResourceManager::loadModel(const std::string& modelPath, const std::s
             indexOffset += fv;
         }
         shapeIndex += 1;
-        materialUniformBufferObjects.push_back(std::make_shared<MaterialUniformBufferObject>()); // 添加材质统一缓冲区对象
+        float emission = 0.0f;
+        if (shape.name == "light"){
+            emission = 2.0f; // 如果是光源，设置自发光强度
+        }
+        materialUniformBufferObjects.push_back(std::make_shared<MaterialUniformBufferObject>(vertices.back().color, emission)); // 添加材质统一缓冲区对象
         shapeNames.push_back(shape.name); // 存储形状名称
     }
 }
@@ -373,6 +377,7 @@ void VertexResourceManager::updateUniformBuffer(uint32_t currentFrame, VkExtent2
         materialUbo[i].metallic = materialUniformBufferObjects[i]->metallic;
         materialUbo[i].roughness = materialUniformBufferObjects[i]->roughness;
         materialUbo[i].ambientOcclusion = materialUniformBufferObjects[i]->ambientOcclusion;
+        materialUbo[i].emission = materialUniformBufferObjects[i]->emission;
     }
     memcpy(materialUniformBuffersMapped[currentFrame], materialUbo.data(), sizeof(MaterialUniformBufferObject) * shapeNames.size());
 }

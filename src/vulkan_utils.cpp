@@ -146,7 +146,14 @@ void VulkanUtils::transitionImageLayout(
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 
-    } 
+    } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        // 从 UNDEFINED 转换到 GENERAL
+        barrier.srcAccessMask = 0; // 初始状态没有访问
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT; // 目标是着色器写入
+
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT; // 源阶段
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT; // 目标阶段
+    }
     else {
         throw std::invalid_argument("unsupported layout transition!");
     }
