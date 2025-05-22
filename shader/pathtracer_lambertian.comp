@@ -152,5 +152,17 @@ void main() {
     seed = uint(pix.x + pix.y * 512 + frame * 1337);
 
     vec3 color = traceRay(cameraPos, dir);
-    imageStore(outputImage, pix, vec4(color, 1.0));
+
+    vec4 prevColor = imageLoad(outputImage, pix);
+
+    // 如果是第一帧，直接写入；否则做累计平均
+    float alpha = 0.05; // 衰减速度，可以调试
+    vec3 blended = (frame == 0)
+        ? color
+        : mix(prevColor.rgb, color, 1.0 / float(frame + 1));
+    // vec3 blended = (frame == 0)
+    //     ? color
+    //     : mix(prevColor.rgb, color, alpha);
+    // vec3 toneMapped = blended / (blended + vec3(1.0));
+    imageStore(outputImage, pix, vec4(blended, 1.0));
 }
