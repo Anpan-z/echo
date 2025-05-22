@@ -37,6 +37,28 @@ void PathTracingPipeline::cleanup() {
     }
 }
 
+void PathTracingPipeline::recreateOutputImageResource() {
+    pathTracingResourceManager->recreatePathTracingOutputImages();
+
+    for (size_t i = 0; i < pathTracingResourceManager->getPathTracingOutputImages().size(); i++) {
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        imageInfo.imageView = pathTracingResourceManager->getPathTracingOutputImageviews()[i];
+        imageInfo.sampler = VK_NULL_HANDLE;
+
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = imageDescriptorSets[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+    }
+}
+
 VkCommandBuffer PathTracingPipeline::recordCommandBuffer(uint32_t frameIndex, uint32_t imageIndex) {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -62,6 +84,9 @@ VkCommandBuffer PathTracingPipeline::recordCommandBuffer(uint32_t frameIndex, ui
 
     barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT; // 着色器读取
     barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT; // 计算着色器写入
+
+    // barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT; // 着色器读取
+    // barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT|VK_ACCESS_SHADER_READ_BIT; // 计算着色器写入
 
     vkCmdPipelineBarrier(
         commandBuffer,

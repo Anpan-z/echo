@@ -189,6 +189,7 @@ private:
             swapChainManager.recreateSwapChain();
             renderTarget.recreateRenderTarget();
             imguiManager.recreatWindow();
+            pathTracingPipeline.recreateOutputImageResource();
             return;
         }
         else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -256,6 +257,7 @@ private:
             swapChainManager.recreateSwapChain();
             renderTarget.recreateRenderTarget();
             imguiManager.recreatWindow();
+            pathTracingPipeline.recreateOutputImageResource();
         }
         else if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to present swap chain image!");

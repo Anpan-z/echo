@@ -36,6 +36,18 @@ void PathTracingResourceManager::cleanup() {
     }
 }
 
+void PathTracingResourceManager::recreatePathTracingOutputImages() {
+    vkDeviceWaitIdle(device);
+    for (size_t i = 0; i < storageImages.size(); i++) {
+        vkDestroyImageView(device, storageImageViews[i], nullptr);
+        vkDestroyImage(device, storageImages[i], nullptr);
+        vkFreeMemory(device, storageImageMemories[i], nullptr);
+    }
+    createPathTracingOutputImages();
+    outPutExtent = swapChainManager->getSwapChainExtent();
+    totalSampleCount = 0;
+}
+
 void PathTracingResourceManager::buildTrianglesFromMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
     
     size_t triangleCount = indices.size() / 3;
@@ -117,7 +129,7 @@ void PathTracingResourceManager::updateCameraDataBuffer(uint32_t currentFrame, V
     proj[1][1] *= -1; // flip Y axis for Vulkan
     cameraData.invViewProj = glm::inverse(proj * camera.getViewMatrix());
     cameraData.cameraPos = camera.getPosition();
-    cameraData.frame = currentFrame;
+    cameraData.frame = totalSampleCount++;
 
     memcpy(cameraDataBuffersMapped[currentFrame], &cameraData, sizeof(CameraData));
 }

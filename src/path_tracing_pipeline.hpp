@@ -12,6 +12,8 @@ public:
 
     VkCommandBuffer recordCommandBuffer(uint32_t frameIndex, uint32_t imageIndex);
 
+    void recreateOutputImageResource();
+
 private:
     VkDevice device = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;

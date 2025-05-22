@@ -26,6 +26,8 @@ public:
     void cleanup();
 
     void updateCameraDataBuffer(uint32_t currentFrame, VkExtent2D swapChainExtent, Camera& camera);
+
+    void recreatePathTracingOutputImages();
     
     std::vector<VkImage> getPathTracingOutputImages() const { return storageImages; }
     
@@ -63,6 +65,8 @@ private:
     std::vector<VkBuffer> cameraDataBuffer;
     std::vector<VkDeviceMemory> cameraDataBufferMemory;
     std::vector<void*> cameraDataBuffersMapped;
+
+    uint32_t totalSampleCount = 0;
 
     void buildTrianglesFromMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
     void createStorageBuffer();
