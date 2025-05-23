@@ -14,11 +14,17 @@ void PathTracingResourceManager::init(VkDevice device, VkPhysicalDevice physical
     this->commandManager = &commandManager;
     this->vertexResourceManager = &vertexResourceManager;
     this->materialUniformBuffers = &vertexResourceManager.getMaterialUniformBuffers();
+    //用于rebuild相关资源时双帧或多帧同步
+    this->maxFramesInFlight = MAX_FRAMES_IN_FLIGHT;
+    this->framesToForceZero = maxFramesInFlight;
     
     buildTrianglesFromMesh(vertexResourceManager.getVertices(), vertexResourceManager.getIndices());
     createStorageBuffer();
     createPathTracingOutputImages();
     createCameraDataBuffer();
+
+    pathTracingResourceManagerModelObserver = std::make_unique<PathTracingResourceManagerModelObserver>(this); // 创建模型重新加载观察者
+    vertexResourceManager.addModelReloadObserver(pathTracingResourceManagerModelObserver.get()); // 添加观察者
 }
 
 void PathTracingResourceManager::cleanup() {
@@ -46,6 +52,20 @@ void PathTracingResourceManager::recreatePathTracingOutputImages() {
     createPathTracingOutputImages();
     outPutExtent = swapChainManager->getSwapChainExtent();
     totalSampleCount = 0;
+}
+
+void PathTracingResourceManager::recreteTriangleData() {
+    triangles.clear();
+    vkDestroyBuffer(device, storageBuffer, nullptr);
+    vkFreeMemory(device, storageBufferMemory, nullptr);
+    buildTrianglesFromMesh(vertexResourceManager->getVertices(), vertexResourceManager->getIndices());
+    createStorageBuffer();
+    vkDeviceWaitIdle(device);
+    totalSampleCount = 0;
+    framesToForceZero = maxFramesInFlight;
+    for(auto observer : pathTracingResourceReloadObservers){
+        observer->onModelReloaded();
+    }
 }
 
 void PathTracingResourceManager::buildTrianglesFromMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
@@ -129,7 +149,12 @@ void PathTracingResourceManager::updateCameraDataBuffer(uint32_t currentFrame, V
     proj[1][1] *= -1; // flip Y axis for Vulkan
     cameraData.invViewProj = glm::inverse(proj * camera.getViewMatrix());
     cameraData.cameraPos = camera.getPosition();
-    cameraData.frame = totalSampleCount++;
+    if(framesToForceZero > 0){
+        cameraData.frame = 0;
+        framesToForceZero--; // 消耗一个“强制为零”的帧机会
+    }else{
+        cameraData.frame = totalSampleCount++;
+    }
 
     memcpy(cameraDataBuffersMapped[currentFrame], &cameraData, sizeof(CameraData));
 }

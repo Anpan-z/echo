@@ -17,6 +17,9 @@ void PathTracingPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice,
     createPathTracingPipeline();
     createDescriptorPool();
     createDescriptorSets();
+
+    pathTracingPipelineObserver = std::make_unique<PathTracingPipelineObserver>(this);
+    pathTracingResourceManager.addPathTracingResourceReloadObserver(pathTracingPipelineObserver.get());
 }
 
 void PathTracingPipeline::cleanup() {
@@ -56,6 +59,41 @@ void PathTracingPipeline::recreateOutputImageResource() {
         descriptorWrite.pImageInfo = &imageInfo;
 
         vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+    }
+}
+
+void PathTracingPipeline::updateStorageBufferDescriptorSet() {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkDescriptorBufferInfo trianglesBufferInfo{};
+        trianglesBufferInfo.buffer = pathTracingResourceManager->getStorageBuffer();
+        trianglesBufferInfo.offset = 0;
+        trianglesBufferInfo.range = VK_WHOLE_SIZE;
+
+        VkDescriptorBufferInfo materialBufferInfo{};
+        materialBufferInfo.buffer = pathTracingResourceManager->getMaterialUniformBuffers()[i];
+        materialBufferInfo.offset = 0;
+        materialBufferInfo.range = sizeof(MaterialUniformBufferObject) * pathTracingResourceManager->getShapeNames().size();
+
+        VkWriteDescriptorSet trianglesWrite{};
+        trianglesWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        trianglesWrite.dstSet = frameDescriptorSets[i];
+        trianglesWrite.dstBinding = 0; // Triangles 绑定点
+        trianglesWrite.dstArrayElement = 0;
+        trianglesWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        trianglesWrite.descriptorCount = 1;
+        trianglesWrite.pBufferInfo = &trianglesBufferInfo;
+
+        VkWriteDescriptorSet materialsWrite{};
+        materialsWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        materialsWrite.dstSet = frameDescriptorSets[i];
+        materialsWrite.dstBinding = 1; // Materials 绑定点
+        materialsWrite.dstArrayElement = 0;
+        materialsWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        materialsWrite.descriptorCount = 1;
+        materialsWrite.pBufferInfo = &materialBufferInfo;
+
+        std::vector<VkWriteDescriptorSet> descriptorWrites = {trianglesWrite, materialsWrite};
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 }
 

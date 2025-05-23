@@ -205,6 +205,7 @@ private:
         vkResetCommandBuffer(renderPipeline.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
         vkResetCommandBuffer(shadowMapping.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
         vkResetCommandBuffer(imguiManager.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
+        vkResetCommandBuffer(pathTracingPipeline.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
         
         imguiManager.addTexture(&pathTracingResourceManager.getPathTracingOutputImageviews()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         // imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
