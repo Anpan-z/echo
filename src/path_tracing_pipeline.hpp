@@ -14,7 +14,7 @@ public:
 
     VkCommandBuffer recordCommandBuffer(uint32_t frameIndex, uint32_t imageIndex);
 
-    void recreateOutputImageResource();
+    void updateOutputImageDescriptorSet();
 
     void updateStorageBufferDescriptorSet();
 
@@ -61,7 +61,7 @@ class PathTracingPipelineObserver : public PathTracingResourceReloadObserver {
         void onPathTracingOutputImagesRecreated() override {
             // 当路径追踪输出图像重新创建时，更新 RenderPipeline 的描述符集
             if (pathTracingPipeline) {
-                pathTracingPipeline->recreateOutputImageResource();
+                pathTracingPipeline->updateOutputImageDescriptorSet();
             }
         }
     

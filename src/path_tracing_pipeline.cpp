@@ -40,9 +40,7 @@ void PathTracingPipeline::cleanup() {
     }
 }
 
-void PathTracingPipeline::recreateOutputImageResource() {
-    pathTracingResourceManager->recreatePathTracingOutputImages();
-
+void PathTracingPipeline::updateOutputImageDescriptorSet() {
     for (size_t i = 0; i < pathTracingResourceManager->getPathTracingOutputImages().size(); i++) {
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;

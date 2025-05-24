@@ -52,6 +52,9 @@ void PathTracingResourceManager::recreatePathTracingOutputImages() {
     createPathTracingOutputImages();
     outPutExtent = swapChainManager->getSwapChainExtent();
     totalSampleCount = 0;
+    for(auto observer : pathTracingResourceReloadObservers){
+        observer->onPathTracingOutputImagesRecreated();
+    }
 }
 
 void PathTracingResourceManager::recreteTriangleData() {
