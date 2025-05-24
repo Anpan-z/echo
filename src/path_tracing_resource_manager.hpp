@@ -90,6 +90,8 @@ private:
     uint32_t framesToForceZero = 0;
     uint32_t maxFramesInFlight;
 
+    glm::mat4 lastInvViewProj;
+    
     void buildTrianglesFromMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
     void createStorageBuffer();
     void createPathTracingOutputImages();

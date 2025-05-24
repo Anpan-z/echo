@@ -152,6 +152,15 @@ void PathTracingResourceManager::updateCameraDataBuffer(uint32_t currentFrame, V
     proj[1][1] *= -1; // flip Y axis for Vulkan
     cameraData.invViewProj = glm::inverse(proj * camera.getViewMatrix());
     cameraData.cameraPos = camera.getPosition();
+
+    if (cameraData.invViewProj != lastInvViewProj) {
+        // 摄像机参数发生变化，重置采样计数
+        totalSampleCount = 0;
+        framesToForceZero = maxFramesInFlight;
+
+        lastInvViewProj = cameraData.invViewProj;
+    }
+
     if(framesToForceZero > 0){
         cameraData.frame = 0;
         framesToForceZero--; // 消耗一个“强制为零”的帧机会
