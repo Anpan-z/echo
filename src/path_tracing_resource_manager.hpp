@@ -19,6 +19,14 @@ struct CameraData {
     int frame;             // 当前帧编号
 };
 
+struct BVHNode {
+    alignas(16) glm::vec3 minBounds; // 包围盒的最小点
+    alignas(16) glm::vec3 maxBounds; // 包围盒的最大点
+    alignas(4)  int leftChild;       // 左子节点索引（-1 表示没有子节点）
+    alignas(4)  int rightChild;      // 右子节点索引（-1 表示没有子节点）
+    alignas(4)  int triangleIndex;   // 如果是叶节点，存储三角形索引；否则为 -1
+};
+
 class PathTracingResourceReloadObserver {
 public:
     virtual void onModelReloaded() = 0; // 当模型重新加载时的回调
@@ -44,7 +52,9 @@ public:
     
     std::vector<VkImageView> getPathTracingOutputImageviews() const { return storageImageViews; }
 
-    VkBuffer getStorageBuffer() const { return storageBuffer; }
+    VkBuffer getTriangleStorageBuffer() const { return triangleStorageBuffer; }
+
+    VkBuffer getBVHStorageBuffer() const { return BVHStorageBuffer; }
 
     VkExtent2D getOutputExtent() const { return outPutExtent; }
 
@@ -68,10 +78,14 @@ private:
     VertexResourceManager* vertexResourceManager = nullptr;
 
     std::vector<Triangle> triangles;
+    std::vector<BVHNode> bvhNodes;
     std::vector<VkBuffer>* materialUniformBuffers;
 
-    VkBuffer storageBuffer;
-    VkDeviceMemory storageBufferMemory;
+    VkBuffer triangleStorageBuffer;
+    VkDeviceMemory triangleStorageBufferMemory;
+
+    VkBuffer BVHStorageBuffer;
+    VkDeviceMemory BVHStorageBufferMemory;
 
     std::vector<VkImage> storageImages;
     std::vector<VkDeviceMemory> storageImageMemories;
@@ -93,10 +107,17 @@ private:
     glm::mat4 lastInvViewProj;
     
     void buildTrianglesFromMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
-    void createStorageBuffer();
-    void createPathTracingOutputImages();
+    
+    void buildBVH();
+    int buildBVHNode(const std::vector<Triangle>& triangles, std::vector<int>& triangleIndices, int start, int end, std::vector<BVHNode>& bvhNodes);
+    int partitionTriangles(const std::vector<Triangle>& triangles, std::vector<int>& triangleIndices, int start, int end);
+    int partitionTrianglesSAH(const std::vector<Triangle>& triangles, std::vector<int>& triangleIndices, int start, int end);
+    float computeSurfaceArea(const BVHNode& node);
 
+    void createTriangleStorageBuffer();
+    void createPathTracingOutputImages();
     void createCameraDataBuffer();
+
 };
 
 class PathTracingResourceManagerModelObserver : public ModelReloadObserver {

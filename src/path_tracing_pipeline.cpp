@@ -63,9 +63,14 @@ void PathTracingPipeline::updateOutputImageDescriptorSet() {
 void PathTracingPipeline::updateStorageBufferDescriptorSet() {
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo trianglesBufferInfo{};
-        trianglesBufferInfo.buffer = pathTracingResourceManager->getStorageBuffer();
+        trianglesBufferInfo.buffer = pathTracingResourceManager->getTriangleStorageBuffer();
         trianglesBufferInfo.offset = 0;
         trianglesBufferInfo.range = VK_WHOLE_SIZE;
+
+        VkDescriptorBufferInfo bvhBufferInfo{};
+        bvhBufferInfo.buffer = pathTracingResourceManager->getBVHStorageBuffer();
+        bvhBufferInfo.offset = 0;
+        bvhBufferInfo.range = VK_WHOLE_SIZE;    
 
         VkDescriptorBufferInfo materialBufferInfo{};
         materialBufferInfo.buffer = pathTracingResourceManager->getMaterialUniformBuffers()[i];
@@ -81,16 +86,25 @@ void PathTracingPipeline::updateStorageBufferDescriptorSet() {
         trianglesWrite.descriptorCount = 1;
         trianglesWrite.pBufferInfo = &trianglesBufferInfo;
 
+        VkWriteDescriptorSet bvhBufferWrite{};
+        bvhBufferWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        bvhBufferWrite.dstSet = frameDescriptorSets[i];
+        bvhBufferWrite.dstBinding = 1;
+        bvhBufferWrite.dstArrayElement = 0;
+        bvhBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bvhBufferWrite.descriptorCount = 1;
+        bvhBufferWrite.pBufferInfo = &bvhBufferInfo;
+
         VkWriteDescriptorSet materialsWrite{};
         materialsWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         materialsWrite.dstSet = frameDescriptorSets[i];
-        materialsWrite.dstBinding = 1; // Materials 绑定点
+        materialsWrite.dstBinding = 2; // Materials 绑定点
         materialsWrite.dstArrayElement = 0;
         materialsWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         materialsWrite.descriptorCount = 1;
         materialsWrite.pBufferInfo = &materialBufferInfo;
 
-        std::vector<VkWriteDescriptorSet> descriptorWrites = {trianglesWrite, materialsWrite};
+        std::vector<VkWriteDescriptorSet> descriptorWrites = {trianglesWrite, bvhBufferWrite, materialsWrite};
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 }
@@ -203,7 +217,8 @@ VkCommandBuffer PathTracingPipeline::recordCommandBuffer(uint32_t frameIndex, ui
 
 void PathTracingPipeline::createPathTracingPipeline() {
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
-    std::string compute_shader_code_path = "../shader/pathTracer_lambertian.comp";
+    std::string compute_shader_code_path = "../shader/pathtracer_lambertian_bvh.comp";
+    // std::string compute_shader_code_path = "../shader/pathTracer_lambertian.comp";
 
     std::string cs = vulkanUtils.readFileToString(compute_shader_code_path);
     shaderc::Compiler compiler;
@@ -280,22 +295,30 @@ void PathTracingPipeline::createDescriptorSetLayout() {
     triangleBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     triangleBinding.pImmutableSamplers = nullptr;
 
+    // BVH 缓冲区绑定
+    VkDescriptorSetLayoutBinding bvhBufferBinding{};
+    bvhBufferBinding.binding = 1;
+    bvhBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bvhBufferBinding.descriptorCount = 1;
+    bvhBufferBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    bvhBufferBinding.pImmutableSamplers = nullptr;
+    
     // Materials 缓冲区绑定
     VkDescriptorSetLayoutBinding materialBinding{};
-    materialBinding.binding = 1;
+    materialBinding.binding = 2;
     materialBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     materialBinding.descriptorCount = 1;
     materialBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     materialBinding.pImmutableSamplers = nullptr;
 
     VkDescriptorSetLayoutBinding cameraDataBinding{};
-    cameraDataBinding.binding = 2;
+    cameraDataBinding.binding = 3;
     cameraDataBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     cameraDataBinding.descriptorCount = 1;
     cameraDataBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     cameraDataBinding.pImmutableSamplers = nullptr;
     
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings = {triangleBinding, materialBinding, cameraDataBinding};   
+    std::array<VkDescriptorSetLayoutBinding, 4> bindings = {triangleBinding, bvhBufferBinding, materialBinding, cameraDataBinding};   
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -312,7 +335,7 @@ void PathTracingPipeline::createDescriptorPool() {
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     // VkDescriptorPoolSize poolSize{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[0].descriptorCount = 1 * static_cast<uint32_t>(frameCount);
+    poolSizes[0].descriptorCount = 2 * static_cast<uint32_t>(frameCount);
 
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[1].descriptorCount = 2 * static_cast<uint32_t>(frameCount);
@@ -379,9 +402,14 @@ void PathTracingPipeline::createDescriptorSets() {
 
     for (size_t i = 0; i < frameCount; i++) {
         VkDescriptorBufferInfo trianglesBufferInfo{};
-        trianglesBufferInfo.buffer = pathTracingResourceManager->getStorageBuffer();
+        trianglesBufferInfo.buffer = pathTracingResourceManager->getTriangleStorageBuffer();
         trianglesBufferInfo.offset = 0;
-        trianglesBufferInfo.range = VK_WHOLE_SIZE;    
+        trianglesBufferInfo.range = VK_WHOLE_SIZE; 
+
+        VkDescriptorBufferInfo bvhBufferInfo{};
+        bvhBufferInfo.buffer = pathTracingResourceManager->getBVHStorageBuffer();
+        bvhBufferInfo.offset = 0;
+        bvhBufferInfo.range = VK_WHOLE_SIZE;    
 
         VkDescriptorBufferInfo materialBufferInfo{};
         materialBufferInfo.buffer = pathTracingResourceManager->getMaterialUniformBuffers()[i];
@@ -402,10 +430,19 @@ void PathTracingPipeline::createDescriptorSets() {
         trianglesWrite.descriptorCount = 1;
         trianglesWrite.pBufferInfo = &trianglesBufferInfo;
     
+        VkWriteDescriptorSet bvhBufferWrite{};
+        bvhBufferWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        bvhBufferWrite.dstSet = frameDescriptorSets[i];
+        bvhBufferWrite.dstBinding = 1;
+        bvhBufferWrite.dstArrayElement = 0;
+        bvhBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bvhBufferWrite.descriptorCount = 1;
+        bvhBufferWrite.pBufferInfo = &bvhBufferInfo;
+        
         VkWriteDescriptorSet materialsWrite{};
         materialsWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         materialsWrite.dstSet = frameDescriptorSets[i];
-        materialsWrite.dstBinding = 1; // Materials 绑定点
+        materialsWrite.dstBinding = 2; // Materials 绑定点
         materialsWrite.dstArrayElement = 0;
         materialsWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         materialsWrite.descriptorCount = 1;
@@ -416,13 +453,13 @@ void PathTracingPipeline::createDescriptorSets() {
         VkWriteDescriptorSet cameraDataWrite{};
         cameraDataWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         cameraDataWrite.dstSet = frameDescriptorSets[i];
-        cameraDataWrite.dstBinding = 2; // CameraData 绑定点
+        cameraDataWrite.dstBinding = 3; // CameraData 绑定点
         cameraDataWrite.dstArrayElement = 0;
         cameraDataWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         cameraDataWrite.descriptorCount = 1;
         cameraDataWrite.pBufferInfo = &cameraDataBufferInfo;        
     
-        std::vector<VkWriteDescriptorSet> descriptorWrites = {trianglesWrite, materialsWrite, cameraDataWrite};
+        std::vector<VkWriteDescriptorSet> descriptorWrites = {trianglesWrite, bvhBufferWrite, materialsWrite, cameraDataWrite};
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 }

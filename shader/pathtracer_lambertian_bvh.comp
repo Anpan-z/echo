@@ -1,6 +1,14 @@
 #version 450
 layout(local_size_x = 16, local_size_y = 16) in;
 
+struct BVHNode {
+    vec3 minBounds;
+    vec3 maxBounds;
+    int leftChild;
+    int rightChild;
+    int triangleIndex; // -1 表示非叶节点
+};
+
 struct Triangle {
     vec3 v0, v1, v2;
     vec3 normal;
@@ -19,12 +27,12 @@ struct Material {
 layout(set = 0, binding = 0, rgba32f) uniform image2D outputImage;
 
 layout(std140, set = 1, binding = 0) buffer Triangles { Triangle tris[]; };
+layout(std140, set = 1, binding = 1) buffer BVHBuffer { BVHNode bvhNodes[]; };
 
 layout(std140, set = 1, binding = 2) uniform MaterialBlock {
     Material materials[16];
 };
 
-// 使用 UBO 传递摄像机和帧信息
 layout(std140, set = 1, binding = 3) uniform CameraData {
     mat4 invViewProj; // 逆投影矩阵
     vec3 cameraPos;   // 摄像机位置
@@ -43,57 +51,68 @@ float rand() {
     return float(seed & 0x00FFFFFF) / float(0x01000000);
 }
 
-// === 相交函数（简单实现） ===
-bool intersectRayTriangle(vec3 orig, vec3 dir, out int hitIndex, out float t, out vec3 normal) {
-    t = 1e20; // 初始化为一个很大的值，表示当前没有找到交点
-    hitIndex = -1; // 初始化为未命中
-    normal = vec3(0.0); // 初始化法线
+// === 光线与 AABB 相交测试 ===
+bool intersectAABB(vec3 rayOrigin, vec3 rayDir, vec3 minBounds, vec3 maxBounds, out float tMin, out float tMax) {
+    vec3 invDir = 1.0 / rayDir;
+    vec3 t0 = (minBounds - rayOrigin) * invDir;
+    vec3 t1 = (maxBounds - rayOrigin) * invDir;
 
-    for (int i = 0; i < tris.length(); ++i) {
-        Triangle tri = tris[i];
+    vec3 tMinVec = min(t0, t1);
+    vec3 tMaxVec = max(t0, t1);
 
-        // 计算三角形的两条边
-        vec3 edge1 = tri.v1 - tri.v0;
-        vec3 edge2 = tri.v2 - tri.v0;
+    tMin = max(max(tMinVec.x, tMinVec.y), tMinVec.z);
+    tMax = min(min(tMaxVec.x, tMaxVec.y), tMaxVec.z);
 
-        // 计算光线方向与 edge2 的叉积
-        vec3 pvec = cross(dir, edge2);
+    return tMax >= max(tMin, 0.0);
+}
 
-        // 计算行列式，用于判断光线是否平行于三角形
-        float det = dot(edge1, pvec);
-        if (abs(det) < 0.0001) continue; // 行列式接近 0，光线与三角形平行，跳过
+// === 使用 BVH 进行光线与三角形的加速相交测试 ===
+bool intersectBVH(vec3 rayOrigin, vec3 rayDir, out int hitIndex, out float t, out vec3 normal) {
+    int stack[64];
+    int stackPtr = 0;
+    stack[stackPtr++] = 0; // 从根节点开始
 
-        float invDet = 1.0 / det;
+    t = 1e20;
+    hitIndex = -1;
 
-        // 计算从三角形顶点到光线起点的向量
-        vec3 tvec = orig - tri.v0;
+    while (stackPtr > 0) {
+        int nodeIndex = stack[--stackPtr];
+        BVHNode node = bvhNodes[nodeIndex];
 
-        // 计算重心坐标 u
-        float u = dot(tvec, pvec) * invDet;
-        if (u < 0.0 || u > 1.0) continue; // u 超出范围，跳过
+        float tMin, tMax;
+        if (!intersectAABB(rayOrigin, rayDir, node.minBounds, node.maxBounds, tMin, tMax) || tMin > t) {
+            continue;
+        }
 
-        // 计算 qvec，用于计算重心坐标 v
-        vec3 qvec = cross(tvec, edge1);
-
-        // 计算重心坐标 v
-        float v = dot(dir, qvec) * invDet;
-        if (v < 0.0 || u + v > 1.0) continue; // v 超出范围，跳过
-
-        // 计算交点距离 t
-        float tmpT = dot(edge2, qvec) * invDet;
-        if (tmpT > 0.001 && tmpT < t) { // 找到更近的交点
-            t = tmpT;
-            hitIndex = i;
-            normal = normalize(tri.normal); // 确保法线归一化
-
-            // // 确保法线朝向光线方向
-            // if (dot(normal, dir) > 0.0) {
-            //     normal = -normal;
-            // }
+        if (node.triangleIndex >= 0) {
+            // 叶节点，测试与三角形的相交
+            Triangle tri = tris[node.triangleIndex];
+            vec3 edge1 = tri.v1 - tri.v0;
+            vec3 edge2 = tri.v2 - tri.v0;
+            vec3 pvec = cross(rayDir, edge2);
+            float det = dot(edge1, pvec);
+            if (abs(det) < 0.0001) continue;
+            float invDet = 1.0 / det;
+            vec3 tvec = rayOrigin - tri.v0;
+            float u = dot(tvec, pvec) * invDet;
+            if (u < 0.0 || u > 1.0) continue;
+            vec3 qvec = cross(tvec, edge1);
+            float v = dot(rayDir, qvec) * invDet;
+            if (v < 0.0 || u + v > 1.0) continue;
+            float tmpT = dot(edge2, qvec) * invDet;
+            if (tmpT > 0.001 && tmpT < t) {
+                t = tmpT;
+                hitIndex = node.triangleIndex;
+                normal = normalize(tri.normal);
+            }
+        } else {
+            // 非叶节点，压入子节点
+            stack[stackPtr++] = node.leftChild;
+            stack[stackPtr++] = node.rightChild;
         }
     }
 
-    return hitIndex != -1; // 如果命中，返回 true；否则返回 false
+    return hitIndex != -1;
 }
 
 // === 采样单位半球 ===
@@ -123,8 +142,7 @@ vec3 traceRay(vec3 origin, vec3 dir) {
         int hitIndex;
         float t;
         vec3 normal;
-        if (!intersectRayTriangle(origin, dir, hitIndex, t, normal)) {
-            // return vec3(1,0,1); // 没有命中，返回背景色
+        if (!intersectBVH(origin, dir, hitIndex, t, normal)) {
             break;
         }
 
@@ -133,6 +151,7 @@ vec3 traceRay(vec3 origin, vec3 dir) {
     
         origin += dir * t + normal * 0.001; // 防止自相交
         dir = sampleHemisphere(normal);
+        // dir = normalize(normal + vec3(rand(), rand(), rand()) * 0.1); // 半球采样
 
         radiance += throughput * mat.emission;
         throughput *= mat.albedo;
@@ -156,13 +175,8 @@ void main() {
     vec4 prevColor = imageLoad(outputImage, pix);
 
     // 如果是第一帧，直接写入；否则做累计平均
-    float alpha = 0.05; // 衰减速度，可以调试
     vec3 blended = (frame == 0)
         ? color
         : mix(prevColor.rgb, color, 1.0 / float(frame + 1));
-    // vec3 blended = (frame == 0)
-    //     ? color
-    //     : mix(prevColor.rgb, color, alpha);
-    // vec3 toneMapped = blended / (blended + vec3(1.0));
     imageStore(outputImage, pix, vec4(blended, 1.0));
 }
