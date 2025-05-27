@@ -30,9 +30,23 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # 设置归档文件的输出目录（如果有）
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-file(GLOB SOURCES
+# 递归收集所有源文件（cpp），包含子目录
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
     src/*.cpp
 )
+
+# 递归收集所有头文件（h），包含子目录
+file(GLOB_RECURSE HEADER_DIRS CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*
+)
+
+# 从所有文件路径中提取唯一目录（防止路径重复）
+set(INCLUDE_DIRS "")
+foreach(path ${HEADER_DIRS})
+    get_filename_component(dir ${path} DIRECTORY)
+    list(APPEND INCLUDE_DIRS ${dir})
+endforeach()
+list(REMOVE_DUPLICATES INCLUDE_DIRS)
 
 message(STATUS "GLFW_INCLUDE_DIR: ${GLFW_INCLUDE_DIR}")
 message(STATUS "GLFW_LIBRARY: ${GLFW_LIBRARY}")
@@ -41,17 +55,24 @@ message(STATUS "Vulkan_DIRS: ${Vulkan_LIBRARIES_DIRS}")
 message(STATUS "Vulkan_LIBRARIES: ${Vulkan_LIBRARIES}")
 message(STATUS "GLFW_LIBRARIES: ${GLFW_LIBRARIES}")
 
+# Executable
 add_executable(${PROJECT_NAME} ${SOURCES})
-
-target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} ${GLFW_INCLUDE_DIR})
 
 # 添加 GLM 的头文件路径
 set(GLM_INCLUDE_DIR "external/glm-1.0.1-light") 
 set(STB_INCLUDE_DIR "external/stb_master") 
+
+# 添加 include 路径（再加上外部依赖）
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${INCLUDE_DIRS}
+    ${Vulkan_INCLUDE_DIRS}
+    ${GLFW_INCLUDE_DIR}
+    ${GLM_INCLUDE_DIR}
+    ${STB_INCLUDE_DIR}
+)
+
 set(Vulkan_LIBRARIES ${Vulkan_LIBRARIES} "${Vulkan_INCLUDE_DIRS}/../Lib/shaderc_shared.lib")
 set(GLFW_LIBRARY glfw)
-
-target_include_directories(${PROJECT_NAME} PRIVATE ${GLM_INCLUDE_DIR} ${STB_INCLUDE_DIR})
 
 target_link_libraries(${PROJECT_NAME} ${Vulkan_LIBRARIES} ${GLFW_LIBRARY} imgui)
 
