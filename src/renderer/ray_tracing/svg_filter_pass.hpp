@@ -7,6 +7,7 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 
+class SVGFilterPassObserver;
 class SVGFilterPass
 {
   public:
@@ -16,6 +17,12 @@ class SVGFilterPass
     void cleanup();
 
     VkCommandBuffer recordCommandBuffer(uint32_t frameIndex, uint32_t imageIndex);
+
+    void updatePathTracedColorDescriptorSets();
+
+    void updateGBufferDescriptorSets();
+
+    void updateSVGFilterDescriptorSets();
 
   private:
     VkDevice device;
@@ -36,8 +43,51 @@ class SVGFilterPass
     VkDescriptorPool descriptorPool;
     std::vector<VkDescriptorSet> descriptorSets;
 
+    std::unique_ptr<SVGFilterPassObserver> svgFilterPassObserver;
+
     void createPipeline();
     void createDescriptorSetLayout();
     void createDescriptorPool();
     void createDescriptorSets();
+};
+
+class SVGFilterPassObserver : public SVGFilterImageRecreateObserver,
+                              public GBufferResourceRecreateObserver,
+                              public PathTracingResourceReloadObserver
+{
+  public:
+    SVGFilterPassObserver(SVGFilterPass* svgFilterPass) : svgFilterPass(svgFilterPass)
+    {
+    }
+
+    void onSVGFilterImageRecreated() override
+    {
+        if (svgFilterPass)
+        {
+            svgFilterPass->updateSVGFilterDescriptorSets();
+        }
+    }
+
+    void onGBufferRecreated() override
+    {
+        if (svgFilterPass)
+        {
+            svgFilterPass->updateGBufferDescriptorSets();
+        }
+    }
+
+    void onPathTracingOutputImagesRecreated() override
+    {
+        if (svgFilterPass)
+        {
+            svgFilterPass->updatePathTracedColorDescriptorSets();
+        }
+    }
+
+    void onModelReloaded() override
+    {
+    }
+
+  private:
+    SVGFilterPass* svgFilterPass = nullptr;
 };

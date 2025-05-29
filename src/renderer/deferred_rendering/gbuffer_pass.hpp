@@ -32,8 +32,8 @@ class GBufferPass
     uint32_t width;
     uint32_t height;
 
-    GBufferResourceManager gbufferResourceManager;
-    VertexResourceManager* vertexResourceManager;
+    VertexResourceManager* vertexResourceManager = nullptr;
+    SwapChainManager* swapChainManager = nullptr;
 
     void createRenderPass();
     void createDescriptorSetLayout();

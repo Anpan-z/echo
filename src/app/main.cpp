@@ -18,6 +18,8 @@
 #include "IBL_renderer.hpp"
 #include "path_tracing_pipeline.hpp"
 #include "path_tracing_resource_manager.hpp"
+#include "gbuffer_pass.hpp"
+#include "svg_filter_pass.hpp"
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -72,6 +74,11 @@ private:
     PathTracingResourceManager pathTracingResourceManager;
     PathTracingPipeline pathTracingPipeline;
 
+    GBufferPass gbufferPass;
+    GBufferResourceManager gbufferResourceManager;
+    SVGFilterPass svgFilterPass;
+    SVGFilterResourceManager svgFilterResourceManager;
+
     Camera camera;
     
     void initWindow() {
@@ -109,8 +116,10 @@ private:
         
         renderPipeline.setup(shadowMapping);
         
-    
-
+        gbufferPass.init(device, physicalDevice, swapChainManager, vertexResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+        gbufferResourceManager.init(device, physicalDevice, gbufferPass.getGBufferRenderPass(), swapChainManager);
+        svgFilterResourceManager.init(device, physicalDevice, graphicsQueue, swapChainManager, commandManager);
+        svgFilterPass.init(device, physicalDevice, swapChainManager, gbufferResourceManager, pathTracingResourceManager, svgFilterResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
         camera.init();
         createSyncObjects();
     }
@@ -150,6 +159,10 @@ private:
         iblRenderer.cleanup();
         pathTracingPipeline.cleanup();
         pathTracingResourceManager.cleanup();
+        gbufferPass.cleanup();
+        gbufferResourceManager.cleanup();
+        svgFilterPass.cleanup();
+        svgFilterResourceManager.cleanup();
 
         imguiManager.cleanup();
         vulkanContext.cleanup();
@@ -190,6 +203,8 @@ private:
             renderTarget.recreateRenderTarget();
             imguiManager.recreatWindow();
             pathTracingResourceManager.recreatePathTracingOutputImages();
+            gbufferResourceManager.recreateGBuffer();
+            svgFilterResourceManager.recreateDenoisedOutputImages();
             return;
         }
         else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -207,17 +222,20 @@ private:
         vkResetCommandBuffer(imguiManager.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
         vkResetCommandBuffer(pathTracingPipeline.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
         
-        imguiManager.addTexture(&pathTracingResourceManager.getPathTracingOutputImageviews()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        imguiManager.addTexture(&svgFilterResourceManager.getDenoisedOutputImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        // imguiManager.addTexture(&pathTracingResourceManager.getPathTracingOutputImageviews()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         // imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         VkExtent2D contentSize = imguiManager.renderImGuiInterface();
         
         auto shadowcommandBuffer = shadowMapping.recordShadowCommandBuffer(currentFrame);
         auto commandBuffer =  renderPipeline.recordCommandBuffer(currentFrame, renderTarget.getOffScreenFramebuffers()[imageIndex]);
         auto pathTracingCommandBuffer = pathTracingPipeline.recordCommandBuffer(currentFrame, imageIndex);
+        auto gbufferCommandBuffer = gbufferPass.recordCommandBuffer(currentFrame, gbufferResourceManager.getFramebuffer(imageIndex));
+        auto svgFilterCommandBuffer = svgFilterPass.recordCommandBuffer(currentFrame, imageIndex);
 
         VkCommandBuffer imguiCommandBuffer =  imguiManager.recordCommandbuffer(currentFrame, renderTarget.getFramebuffers()[imageIndex]);
         
-        std::array<VkCommandBuffer, 4>commandBuffers = {shadowcommandBuffer, pathTracingCommandBuffer, commandBuffer, imguiCommandBuffer};
+        std::array<VkCommandBuffer, 6> commandBuffers = {shadowcommandBuffer, pathTracingCommandBuffer, commandBuffer, gbufferCommandBuffer, svgFilterCommandBuffer, imguiCommandBuffer};
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -259,6 +277,8 @@ private:
             renderTarget.recreateRenderTarget();
             imguiManager.recreatWindow();
             pathTracingResourceManager.recreatePathTracingOutputImages();
+            gbufferResourceManager.recreateGBuffer();
+            svgFilterResourceManager.recreateDenoisedOutputImages();
         }
         else if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to present swap chain image!");

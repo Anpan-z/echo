@@ -6,6 +6,8 @@ void GBufferResourceManager::init(VkDevice device, VkPhysicalDevice physicalDevi
 {
     this->device = device;
     this->physicalDevice = physicalDevice;
+    this->gbufferRenderPass = renderPass;
+    this->swapChainManager = &swapChainManager;
     this->width = swapChainManager.getSwapChainExtent().width;
     this->height = swapChainManager.getSwapChainExtent().height;
     this->imageCount = swapChainManager.getSwapChainImages().size();
@@ -45,6 +47,20 @@ void GBufferResourceManager::cleanup()
         destroyAttachment(colorAttachments[index]);
         destroyAttachment(normalAttachments[index]);
         destroyAttachment(depthAttachments[index]);
+    }
+}
+
+void GBufferResourceManager::recreateGBuffer()
+{
+    vkDeviceWaitIdle(device); // 等待设备空闲
+
+    // 清理旧的资源
+    cleanup();
+    // 重新创建 G-Buffer 附件和帧缓冲
+    init(device, physicalDevice, gbufferRenderPass, *swapChainManager);
+    for (auto observer : gbufferResourceRecreateObservers)
+    {
+        observer->onGBufferRecreated(); // 通知观察者 G-Buffer 已重新创建
     }
 }
 

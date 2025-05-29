@@ -13,6 +13,7 @@ void GBufferPass::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapCha
     this->physicalDevice = physicalDevice;
     this->width = swapChainManager.getSwapChainExtent().width;
     this->height = swapChainManager.getSwapChainExtent().height;
+    this->swapChainManager = &swapChainManager;
     this->vertexResourceManager = &vertexResourceManager;
     this->gbufferCommandBuffers = std::move(CommandBuffers);
 
@@ -72,7 +73,7 @@ VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex, VkFramebuf
     renderPassInfo.renderPass = gbufferRenderPass;                                  // 使用 GBuffer 的 Render Pass
     renderPassInfo.framebuffer = framebuffer; // 获取当前帧的 Framebuffer
     renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = {width, height};
+    renderPassInfo.renderArea.extent = swapChainManager->getSwapChainExtent();
 
     // 清除值（颜色和深度）
     std::vector<VkClearValue> clearValues(4);
@@ -93,8 +94,8 @@ VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex, VkFramebuf
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast<float>(width);
-    viewport.height = static_cast<float>(height);
+    viewport.width = static_cast<float>(swapChainManager->getSwapChainExtent().width);
+    viewport.height = static_cast<float>(swapChainManager->getSwapChainExtent().height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
@@ -102,7 +103,7 @@ VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex, VkFramebuf
     // 设置裁剪区域
     VkRect2D scissor{};
     scissor.offset = {0, 0};
-    scissor.extent = {width, height};
+    scissor.extent = swapChainManager->getSwapChainExtent();
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // 绑定顶点和索引缓冲

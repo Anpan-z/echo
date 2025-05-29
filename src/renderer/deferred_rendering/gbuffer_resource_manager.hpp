@@ -4,6 +4,13 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 
+class GBufferResourceRecreateObserver
+{
+  public:
+    virtual void onGBufferRecreated() = 0;
+    virtual ~GBufferResourceRecreateObserver() = default;
+};
+
 // 表示 G-Buffer 中的一个附件（颜色、法线或深度）
 struct GBufferAttachment
 {
@@ -20,6 +27,8 @@ class GBufferResourceManager
               SwapChainManager& swapChainManager);
 
     void cleanup();
+
+    void recreateGBuffer();
 
     const GBufferAttachment& getColorAttachment(uint32_t index) const
     {
@@ -43,9 +52,16 @@ class GBufferResourceManager
         return framebuffers[index];
     }
 
+    void addGBufferResourceRecreateObserver(GBufferResourceRecreateObserver* observer)
+    {
+        gbufferResourceRecreateObservers.push_back(observer);
+    }
+
   private:
     VkDevice device;
     VkPhysicalDevice physicalDevice;
+    SwapChainManager* swapChainManager = nullptr;
+    VkRenderPass gbufferRenderPass = VK_NULL_HANDLE;
 
     uint32_t width;
     uint32_t height;
@@ -57,6 +73,8 @@ class GBufferResourceManager
     std::vector<GBufferAttachment> depthAttachments;    // 深度
 
     std::vector<VkFramebuffer> framebuffers;
+
+    std::vector<GBufferResourceRecreateObserver*> gbufferResourceRecreateObservers;
 
     void createAttachment(std::vector<GBufferAttachment>& attachment, VkFormat format, VkImageUsageFlags usage,
                           VkImageAspectFlags aspectFlags);

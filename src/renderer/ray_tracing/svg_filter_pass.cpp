@@ -21,6 +21,11 @@ void SVGFilterPass::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapC
     this->imageCount = swapChainManager.getSwapChainImages().size();
     this->commandBuffers = std::move(commandBuffers);
 
+    svgFilterPassObserver = std::make_unique<SVGFilterPassObserver>(this);
+    svgFilterResourceManager.addSVGFilterImageRecreateObserver(svgFilterPassObserver.get());
+    gbufferResourceManager.addGBufferResourceRecreateObserver(svgFilterPassObserver.get());
+    pathTracingResourceManager.addPathTracingResourceReloadObserver(svgFilterPassObserver.get());
+
     createDescriptorSetLayout();
     createPipeline();
     createDescriptorPool();
@@ -197,69 +202,91 @@ void SVGFilterPass::createDescriptorSets()
         throw std::runtime_error("Failed to allocate SVG filter descriptor sets!");
     }
 
+    updatePathTracedColorDescriptorSets();
+    updateGBufferDescriptorSets();
+    updateSVGFilterDescriptorSets();
+}
+
+void SVGFilterPass::updatePathTracedColorDescriptorSets()
+{
     for (size_t imageIndex = 0; imageIndex < descriptorSets.size(); ++imageIndex)
     {
-        std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
-
-        // 0: pathTracedColorBuffer
         VkDescriptorImageInfo pathTracedColorInfo{};
         pathTracedColorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         pathTracedColorInfo.imageView = pathTracingResourceManager->getPathTracingOutputImageviews()[imageIndex];
-        pathTracedColorInfo.sampler = svgFilterResourceManager->getDenoiserInputSampler(); // 或者特定的采样器
+        pathTracedColorInfo.sampler = svgFilterResourceManager->getDenoiserInputSampler();
 
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = descriptorSets[imageIndex];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pImageInfo = &pathTracedColorInfo;
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descriptorSets[imageIndex];
+        descriptorWrite.dstBinding = 0; // 对应布局中的绑定点 0
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pImageInfo = &pathTracedColorInfo;
 
-        // 1: gbufferNormalBuffer
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+    }
+}
+
+void SVGFilterPass::updateGBufferDescriptorSets()
+{
+    for (size_t imageIndex = 0; imageIndex < descriptorSets.size(); ++imageIndex)
+    {
         VkDescriptorImageInfo gbufferNormalInfo{};
         gbufferNormalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         gbufferNormalInfo.imageView = gbufferResourceManager->getNormalAttachment(imageIndex).view;
         gbufferNormalInfo.sampler = svgFilterResourceManager->getDenoiserInputSampler();
 
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = descriptorSets[imageIndex];
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].dstArrayElement = 0;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pImageInfo = &gbufferNormalInfo;
+        VkWriteDescriptorSet normalDescriptorWrite{};
+        normalDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        normalDescriptorWrite.dstSet = descriptorSets[imageIndex];
+        normalDescriptorWrite.dstBinding = 1; // 对应布局中的绑定点 1
+        normalDescriptorWrite.dstArrayElement = 0;
+        normalDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        normalDescriptorWrite.descriptorCount = 1;
+        normalDescriptorWrite.pImageInfo = &gbufferNormalInfo;
 
-        // 2: gbufferDepthBuffer
         VkDescriptorImageInfo gbufferDepthInfo{};
         gbufferDepthInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        // gbufferDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         gbufferDepthInfo.imageView = gbufferResourceManager->getDepthAttachment(imageIndex).view;
         gbufferDepthInfo.sampler = svgFilterResourceManager->getDenoiserInputSampler();
 
-        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[2].dstSet = descriptorSets[imageIndex];
-        descriptorWrites[2].dstBinding = 2;
-        descriptorWrites[2].dstArrayElement = 0;
-        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[2].descriptorCount = 1;
-        descriptorWrites[2].pImageInfo = &gbufferDepthInfo;
+        VkWriteDescriptorSet depthDescriptorWrite{};
+        depthDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        depthDescriptorWrite.dstSet = descriptorSets[imageIndex];
+        depthDescriptorWrite.dstBinding = 2; // 对应布局中的绑定点 2
+        depthDescriptorWrite.dstArrayElement = 0;
+        depthDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        depthDescriptorWrite.descriptorCount = 1;
+        depthDescriptorWrite.pImageInfo = &gbufferDepthInfo;
 
-        // 3: denoisedOutputImage
+        std::array<VkWriteDescriptorSet, 2> descriptorWrites = {normalDescriptorWrite, depthDescriptorWrite};
+
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0,
+                               nullptr);
+    }
+}
+
+void SVGFilterPass::updateSVGFilterDescriptorSets()
+{
+    for (size_t imageIndex = 0; imageIndex < descriptorSets.size(); ++imageIndex)
+    {
         VkDescriptorImageInfo denoisedOutputInfo{};
         denoisedOutputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL; // Storage images 通常使用 GENERAL 布局
         denoisedOutputInfo.imageView = svgFilterResourceManager->getDenoisedOutputImageView()[imageIndex];
         // denoisedOutputInfo.sampler = VK_NULL_HANDLE; // Storage images 不需要 sampler
 
-        descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[3].dstSet = descriptorSets[imageIndex];
-        descriptorWrites[3].dstBinding = 3;
-        descriptorWrites[3].dstArrayElement = 0;
-        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        descriptorWrites[3].descriptorCount = 1;
-        descriptorWrites[3].pImageInfo = &denoisedOutputInfo;
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descriptorSets[imageIndex];
+        descriptorWrite.dstBinding = 3; // 对应布局中的绑定点 3
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pImageInfo = &denoisedOutputInfo;
 
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0,
-                               nullptr);
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
     }
 }
 
