@@ -17,7 +17,6 @@ void GBufferPass::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapCha
     this->gbufferCommandBuffers = std::move(CommandBuffers);
 
     createRenderPass();
-    // gbufferResourceManager.init(device, physicalDevice, gbufferRenderPass, swapChainManager);
     createDescriptorSetLayout();
     createPipeline();
     createDescriptorPool(MAX_FRAMES_IN_FLIGHT);
@@ -54,8 +53,6 @@ void GBufferPass::cleanup()
         vkDestroyDescriptorPool(device, gbufferDescriptorPool, nullptr);
         gbufferDescriptorPool = VK_NULL_HANDLE;
     }
-
-    // gbufferResourceManager.cleanup();
 }
 
 VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex, VkFramebuffer framebuffer)
@@ -174,11 +171,11 @@ void GBufferPass::createRenderPass()
     depthAttachment.format = VK_FORMAT_D32_SFLOAT; // 深度格式
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // 不需要存储深度
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // 需要存储深度
     depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL; // 后续环节需要采样
 
     // 定义子通道引用
     VkAttachmentReference colorAttachmentRef = {};
