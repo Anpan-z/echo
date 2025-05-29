@@ -1,0 +1,92 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// 输入: 路径追踪的颜色缓冲 (通常是HDR)
+layout(set = 0, binding = 0) uniform sampler2D pathTracedColorBuffer;
+// 输入: G-Buffer 世界空间法线 (假定已归一化, [-1, 1] 范围)
+layout(set = 0, binding = 1) uniform sampler2D gbufferNormalBuffer;
+// 输入: G-Buffer 线性深度 (例如，视点空间Z值或世界空间距离)
+layout(set = 0, binding = 2) uniform sampler2D gbufferDepthBuffer;
+
+// 输出: 降噪后的图像
+layout(set = 0, binding = 3, rgba32f) uniform image2D denoisedOutputImage;
+
+// 双边滤波参数 (这些值需要根据场景和效果进行调整)
+const float sigmaColor = 0.3;   // 颜色差异的容忍度，对于HDR图像可能需要仔细调整或使用相对值
+const float sigmaNormal = 0.15;  // 法线差异的容忍度 (基于 1 - dot(n1,n2) 的平方)
+const float sigmaDepth = 0.2;   // 深度差异的容忍度 (单位与深度缓冲中的单位一致)
+const int KERNEL_RADIUS = 2;    // 滤波核半径 (例如, KERNEL_RADIUS = 2 对应 5x5 的核)
+
+void main() {
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageDims = imageSize(denoisedOutputImage);
+
+    // 边界检查，防止越界访问
+    if (pixelCoord.x >= imageDims.x || pixelCoord.y >= imageDims.y) {
+        return;
+    }
+
+    // 使用像素中心进行采样
+    vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(imageDims);
+
+    // 中心像素数据
+    vec3 centerColor = texture(pathTracedColorBuffer, uv).rgb;
+    vec3 centerNormal = texture(gbufferNormalBuffer, uv).rgb; // 假定已归一化
+    float centerDepth = texture(gbufferDepthBuffer, uv).r;   // 假定为线性深度
+
+    vec3 accumulatedColor = vec3(0.0);
+    float totalWeight = 0.0;
+
+    // 遍历滤波核内的邻域像素
+    for (int y_offset = -KERNEL_RADIUS; y_offset <= KERNEL_RADIUS; ++y_offset) {
+        for (int x_offset = -KERNEL_RADIUS; x_offset <= KERNEL_RADIUS; ++x_offset) {
+            ivec2 samplePixelCoord = pixelCoord + ivec2(x_offset, y_offset);
+
+            // 再次边界检查采样像素
+            if (samplePixelCoord.x < 0 || samplePixelCoord.x >= imageDims.x ||
+                samplePixelCoord.y < 0 || samplePixelCoord.y >= imageDims.y) {
+                continue;
+            }
+
+            vec2 sampleUV = (vec2(samplePixelCoord) + 0.5) / vec2(imageDims);
+
+            // 邻域像素数据
+            vec3 sampleColor = texture(pathTracedColorBuffer, sampleUV).rgb;
+            vec3 sampleNormal = texture(gbufferNormalBuffer, sampleUV).rgb;
+            float sampleDepth = texture(gbufferDepthBuffer, sampleUV).r;
+
+            // --- 计算各项权重 ---
+
+            // 1. 颜色权重 (基于颜色值的平方欧氏距离)
+            // 对于HDR颜色，直接的欧氏距离可能不是最优，可以考虑亮度或感知均匀色彩空间
+            float colorDiffSq = dot(centerColor - sampleColor, centerColor - sampleColor);
+            float weightColor = exp(-colorDiffSq / (2.0 * sigmaColor * sigmaColor));
+
+            // 2. 法线权重 (基于法线点积的差异)
+            // 确保法线是单位向量。centerNormal 和 sampleNormal 假定已归一化。
+            float normalDotProduct = dot(centerNormal, sampleNormal);
+            // (1.0 - normalDotProduct) 的值在 [0, 2] 之间，0表示方向相同，2表示方向相反。
+            // 对于表面，我们通常关心的是角度差异，所以 normalDotProduct 接近 1 时权重高。
+            float normalDifference = 1.0 - normalDotProduct;
+            float weightNormal = exp(-(normalDifference * normalDifference) / (2.0 * sigmaNormal * sigmaNormal));
+
+            // 3. 深度权重 (基于深度值的绝对差异的平方)
+            float depthDifference = abs(centerDepth - sampleDepth);
+            float weightDepth = exp(-(depthDifference * depthDifference) / (2.0 * sigmaDepth * sigmaDepth));
+
+            // 组合权重
+            float currentWeight = weightColor * weightNormal * weightDepth;
+
+            accumulatedColor += sampleColor * currentWeight;
+            totalWeight += currentWeight;
+        }
+    }
+
+    vec3 finalColor = centerColor; // 如果总权重过小，则保留原始颜色
+    if (totalWeight > 0.00001) { // 防止除以零
+        finalColor = accumulatedColor / totalWeight;
+    }
+
+    // 将降噪后的颜色写入输出图像
+    imageStore(denoisedOutputImage, pixelCoord, vec4(finalColor, 1.0));
+}
