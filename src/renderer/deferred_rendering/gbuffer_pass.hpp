@@ -12,7 +12,9 @@ class GBufferPass
 
     void cleanup();
 
-    VkCommandBuffer recordCommandBuffer(uint32_t frameIndex);
+    VkCommandBuffer recordCommandBuffer(uint32_t frameIndex, VkFramebuffer framebuffer);
+
+    VkRenderPass getGBufferRenderPass() const { return gbufferRenderPass; }
 
   private:
     VkDevice device = VK_NULL_HANDLE;

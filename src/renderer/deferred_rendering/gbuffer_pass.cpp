@@ -17,7 +17,7 @@ void GBufferPass::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapCha
     this->gbufferCommandBuffers = std::move(CommandBuffers);
 
     createRenderPass();
-    gbufferResourceManager.init(device, physicalDevice, gbufferRenderPass, swapChainManager);
+    // gbufferResourceManager.init(device, physicalDevice, gbufferRenderPass, swapChainManager);
     createDescriptorSetLayout();
     createPipeline();
     createDescriptorPool(MAX_FRAMES_IN_FLIGHT);
@@ -55,10 +55,10 @@ void GBufferPass::cleanup()
         gbufferDescriptorPool = VK_NULL_HANDLE;
     }
 
-    gbufferResourceManager.cleanup();
+    // gbufferResourceManager.cleanup();
 }
 
-VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex)
+VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex, VkFramebuffer framebuffer)
 {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -73,7 +73,7 @@ VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex)
     VkRenderPassBeginInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = gbufferRenderPass;                                  // 使用 GBuffer 的 Render Pass
-    renderPassInfo.framebuffer = gbufferResourceManager.getFramebuffer(frameIndex); // 获取当前帧的 Framebuffer
+    renderPassInfo.framebuffer = framebuffer; // 获取当前帧的 Framebuffer
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = {width, height};
 
