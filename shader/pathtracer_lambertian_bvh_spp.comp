@@ -11,6 +11,7 @@ struct BVHNode {
 
 struct Triangle {
     vec3 v0, v1, v2;
+    vec3 n0, n1, n2; // 顶点法线
     vec3 normal;
     uint materialID;
 };
@@ -101,10 +102,16 @@ bool intersectBVH(vec3 rayOrigin, vec3 rayDir, out int hitIndex, out float t, ou
             float v = dot(rayDir, qvec) * invDet;
             if (v < 0.0 || u + v > 1.0) continue;
             float tmpT = dot(edge2, qvec) * invDet;
+            vec3 bary = vec3(1.0 - u - v, u, v); // 注意：这就是 w0, w1, w2
             if (tmpT > 0.001 && tmpT < t) {
                 t = tmpT;
                 hitIndex = node.triangleIndex;
-                normal = normalize(tri.normal);
+                // normal = normalize(tri.normal);
+                normal = normalize(
+                    tri.n0 * bary.x +
+                    tri.n1 * bary.y +
+                    tri.n2 * bary.z
+                );
             }
         } else {
             // 非叶节点，压入子节点

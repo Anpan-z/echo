@@ -9,6 +9,7 @@
 
 struct Triangle {
     alignas(16) glm::vec3 v0, v1, v2; // 三角形的三个顶点
+    alignas(16) glm::vec3 n0, n1, n2; // 三角形的三个顶点法线
     alignas(16) glm::vec3 normal;     // 三角形的法线
     alignas(4) uint32_t materialID; // 三角形的材质 ID
 };

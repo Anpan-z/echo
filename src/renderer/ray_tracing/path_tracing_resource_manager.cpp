@@ -98,6 +98,9 @@ void PathTracingResourceManager::buildTrianglesFromMesh(const std::vector<Vertex
         tri.v0 = v0.pos;
         tri.v1 = v1.pos;
         tri.v2 = v2.pos;
+        tri.n0 = v0.normal;
+        tri.n1 = v1.normal;
+        tri.n2 = v2.normal;
         tri.normal = faceNormal; // 或者用 v0.normal，依据你想用哪种法线
         tri.materialID = v0.materialID; // 默认 v0 的材质 ID，一般 OBJ 同面材质一致
 

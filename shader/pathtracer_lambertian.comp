@@ -3,6 +3,7 @@ layout(local_size_x = 16, local_size_y = 16) in;
 
 struct Triangle {
     vec3 v0, v1, v2;
+    vec3 n0, n1, n2; // 顶点法线
     vec3 normal;
     uint materialID;
 };
@@ -81,10 +82,15 @@ bool intersectRayTriangle(vec3 orig, vec3 dir, out int hitIndex, out float t, ou
 
         // 计算交点距离 t
         float tmpT = dot(edge2, qvec) * invDet;
+        vec3 bary = vec3(1.0 - u - v, u, v); // 重心坐标
         if (tmpT > 0.001 && tmpT < t) { // 找到更近的交点
             t = tmpT;
             hitIndex = i;
-            normal = normalize(tri.normal); // 确保法线归一化
+            normal = normalize(
+                tri.n0 * bary.x +
+                tri.n1 * bary.y +
+                tri.n2 * bary.z
+            );
 
             // // 确保法线朝向光线方向
             // if (dot(normal, dir) > 0.0) {
