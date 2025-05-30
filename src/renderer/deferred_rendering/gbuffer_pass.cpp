@@ -22,6 +22,9 @@ void GBufferPass::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapCha
     createPipeline();
     createDescriptorPool(MAX_FRAMES_IN_FLIGHT);
     createDescriptorSets(MAX_FRAMES_IN_FLIGHT);
+
+    gbufferPassObserver = std::make_unique<GBufferPassObserver>(this);
+    vertexResourceManager.addModelReloadObserver(gbufferPassObserver.get());
 }
 
 void GBufferPass::cleanup()
@@ -53,6 +56,28 @@ void GBufferPass::cleanup()
     {
         vkDestroyDescriptorPool(device, gbufferDescriptorPool, nullptr);
         gbufferDescriptorPool = VK_NULL_HANDLE;
+    }
+}
+
+void GBufferPass::updateUBODescriptorSets()
+{
+    for (size_t i = 0; i < gbufferDescriptorSets.size(); ++i)
+    {
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = vertexResourceManager->getUniformBuffers()[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject);
+
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = gbufferDescriptorSets[i];
+        descriptorWrite.dstBinding = 0; // UBO 绑定点
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pBufferInfo = &bufferInfo;
+
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
     }
 }
 
@@ -479,25 +504,5 @@ void GBufferPass::createDescriptorSets(uint32_t frameCount)
     }
 
     // 更新描述符集
-    for (size_t i = 0; i < frameCount; ++i)
-    {
-        // 更新 UBO 描述符集
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = vertexResourceManager->getUniformBuffers()[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObject);
-
-        VkWriteDescriptorSet uboWrite{};
-        uboWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        uboWrite.dstSet = gbufferDescriptorSets[i];
-        uboWrite.dstBinding = 0;
-        uboWrite.dstArrayElement = 0;
-        uboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uboWrite.descriptorCount = 1;
-        uboWrite.pBufferInfo = &bufferInfo;
-
-        std::array<VkWriteDescriptorSet, 1> descriptorWrites = {uboWrite};
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0,
-                               nullptr);
-    }
+    updateUBODescriptorSets();
 }
