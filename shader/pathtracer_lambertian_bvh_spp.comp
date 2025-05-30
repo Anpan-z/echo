@@ -1,0 +1,192 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16) in;
+
+struct BVHNode {
+    vec3 minBounds;
+    vec3 maxBounds;
+    int leftChild;
+    int rightChild;
+    int triangleIndex; // -1 表示非叶节点
+};
+
+struct Triangle {
+    vec3 v0, v1, v2;
+    vec3 normal;
+    uint materialID;
+};
+
+struct Material {
+    vec3 albedo;
+    float metallic;
+    float roughness;
+    float ambientOcclusion;
+    float padding1; // pad to 16 bytes
+    float emission;
+};
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D outputImage;
+
+layout(std140, set = 1, binding = 0) buffer Triangles { Triangle tris[]; };
+layout(std140, set = 1, binding = 1) buffer BVHBuffer { BVHNode bvhNodes[]; };
+
+layout(std140, set = 1, binding = 2) uniform MaterialBlock {
+    Material materials[16];
+};
+
+layout(std140, set = 1, binding = 3) uniform CameraData {
+    mat4 invViewProj; // 逆投影矩阵
+    vec3 cameraPos;   // 摄像机位置
+    int frame;        // 当前帧编号
+};
+
+#define MAX_BOUNCES 4
+#define SPP 16
+#define PI 3.14159265359
+
+// === 随机函数 ===
+uint seed;
+float rand() {
+    seed ^= seed << 13;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;
+    return float(seed & 0x00FFFFFF) / float(0x01000000);
+}
+
+// === 光线与 AABB 相交测试 ===
+bool intersectAABB(vec3 rayOrigin, vec3 rayDir, vec3 minBounds, vec3 maxBounds, out float tMin, out float tMax) {
+    vec3 invDir = 1.0 / rayDir;
+    vec3 t0 = (minBounds - rayOrigin) * invDir;
+    vec3 t1 = (maxBounds - rayOrigin) * invDir;
+
+    vec3 tMinVec = min(t0, t1);
+    vec3 tMaxVec = max(t0, t1);
+
+    tMin = max(max(tMinVec.x, tMinVec.y), tMinVec.z);
+    tMax = min(min(tMaxVec.x, tMaxVec.y), tMaxVec.z);
+
+    return tMax >= max(tMin, 0.0);
+}
+
+// === 使用 BVH 进行光线与三角形的加速相交测试 ===
+bool intersectBVH(vec3 rayOrigin, vec3 rayDir, out int hitIndex, out float t, out vec3 normal) {
+    int stack[64];
+    int stackPtr = 0;
+    stack[stackPtr++] = 0; // 从根节点开始
+
+    t = 1e20;
+    hitIndex = -1;
+
+    while (stackPtr > 0) {
+        int nodeIndex = stack[--stackPtr];
+        BVHNode node = bvhNodes[nodeIndex];
+
+        float tMin, tMax;
+        if (!intersectAABB(rayOrigin, rayDir, node.minBounds, node.maxBounds, tMin, tMax) || tMin > t) {
+            continue;
+        }
+
+        if (node.triangleIndex >= 0) {
+            // 叶节点，测试与三角形的相交
+            Triangle tri = tris[node.triangleIndex];
+            vec3 edge1 = tri.v1 - tri.v0;
+            vec3 edge2 = tri.v2 - tri.v0;
+            vec3 pvec = cross(rayDir, edge2);
+            float det = dot(edge1, pvec);
+            if (abs(det) < 0.0001) continue;
+            float invDet = 1.0 / det;
+            vec3 tvec = rayOrigin - tri.v0;
+            float u = dot(tvec, pvec) * invDet;
+            if (u < 0.0 || u > 1.0) continue;
+            vec3 qvec = cross(tvec, edge1);
+            float v = dot(rayDir, qvec) * invDet;
+            if (v < 0.0 || u + v > 1.0) continue;
+            float tmpT = dot(edge2, qvec) * invDet;
+            if (tmpT > 0.001 && tmpT < t) {
+                t = tmpT;
+                hitIndex = node.triangleIndex;
+                normal = normalize(tri.normal);
+            }
+        } else {
+            // 非叶节点，压入子节点
+            stack[stackPtr++] = node.leftChild;
+            stack[stackPtr++] = node.rightChild;
+        }
+    }
+
+    return hitIndex != -1;
+}
+
+// === 采样单位半球 ===
+vec3 sampleHemisphere(vec3 normal) {
+    float u1 = rand();
+    float u2 = rand();
+    float r = sqrt(u1);
+    float theta = 2.0 * PI * u2;
+
+    vec3 up = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(normal, up));
+    vec3 bitangent = cross(normal, tangent);
+
+    return normalize(
+        r * cos(theta) * tangent +
+        r * sin(theta) * bitangent +
+        sqrt(1.0 - u1) * normal
+    );
+}
+
+// === 主追踪函数 ===
+vec3 traceRay(vec3 origin, vec3 dir) {
+    vec3 throughput = vec3(1.0);
+    vec3 radiance = vec3(0.0);
+
+    for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
+        int hitIndex;
+        float t;
+        vec3 normal;
+        if (!intersectBVH(origin, dir, hitIndex, t, normal)) {
+            break;
+        }
+
+        Triangle tri = tris[hitIndex];
+        Material mat = materials[tri.materialID];
+    
+        origin += dir * t + normal * 0.001; // 防止自相交
+        dir = sampleHemisphere(normal);
+        // dir = normalize(normal + vec3(rand(), rand(), rand()) * 0.1); // 半球采样
+
+        radiance += throughput * mat.emission;
+        throughput *= mat.albedo;
+    }
+
+    return radiance;
+}
+
+// === Main Entry ===
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    vec2 resolution = vec2(imageSize(outputImage));
+    seed = uint(pix.x + pix.y * 512 + frame * 1337);
+    
+    vec3 totalColor = vec3(0.0);
+    // 多方向采样
+    for (int i = 0; i < SPP; ++i) {
+        // 添加每次采样扰动
+        vec2 jitter = vec2(rand(), rand());
+        vec2 uv = (vec2(pix) + jitter) / resolution * 2.0 - 1.0;
+
+        vec4 target = invViewProj * vec4(uv, 0.0, 1.0);
+        vec3 dir = normalize(target.xyz / target.w - cameraPos);
+
+        totalColor += traceRay(cameraPos, dir);
+    }
+
+    vec3 avgColor = totalColor / float(SPP);
+
+    vec4 prevColor = imageLoad(outputImage, pix);
+
+    // 如果是第一帧，直接写入；否则做累计平均
+    vec3 blended = (frame == 0)
+        ? avgColor
+        : mix(prevColor.rgb, avgColor, 1.0 / float(frame + 1));
+    imageStore(outputImage, pix, vec4(blended, 1.0));
+}
