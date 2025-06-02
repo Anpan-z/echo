@@ -53,6 +53,19 @@ float rand() {
     return float(seed & 0x00FFFFFF) / float(0x01000000);
 }
 
+float radicalInverse_VdC(uint bits) {
+    bits = (bits << 16) | (bits >> 16);
+    bits = ((bits & 0x55555555u) << 1) | ((bits & 0xAAAAAAAAu) >> 1);
+    bits = ((bits & 0x33333333u) << 2) | ((bits & 0xCCCCCCCCu) >> 2);
+    bits = ((bits & 0x0F0F0F0Fu) << 4) | ((bits & 0xF0F0F0F0u) >> 4);
+    bits = ((bits & 0x00FF00FFu) << 8) | ((bits & 0xFF00FF00u) >> 8);
+    return float(bits) * 2.3283064365386963e-10; // / 0x100000000
+}
+
+vec2 hammersley(uint i, uint N) {
+    return vec2(float(i) / float(N), radicalInverse_VdC(i));
+}
+
 // === 光线与 AABB 相交测试 ===
 bool intersectAABB(vec3 rayOrigin, vec3 rayDir, vec3 minBounds, vec3 maxBounds, out float tMin, out float tMax) {
     vec3 invDir = 1.0 / rayDir;
@@ -179,6 +192,7 @@ void main() {
     for (int i = 0; i < SPP; ++i) {
         // 添加每次采样扰动
         vec2 jitter = vec2(rand(), rand());
+        // vec2 jitter = hammersley(uint(i), uint(SPP));
         vec2 uv = (vec2(pix) + jitter) / resolution * 2.0 - 1.0;
 
         vec4 target = invViewProj * vec4(uv, 0.0, 1.0);
@@ -192,8 +206,11 @@ void main() {
     vec4 prevColor = imageLoad(outputImage, pix);
 
     // 如果是第一帧，直接写入；否则做累计平均
-    vec3 blended = (frame == 0)
-        ? avgColor
-        : mix(prevColor.rgb, avgColor, 1.0 / float(frame + 1));
-    imageStore(outputImage, pix, vec4(blended, 1.0));
+    // vec3 blended = (frame == 0)
+    //     ? avgColor
+    //     : mix(prevColor.rgb, avgColor, 1.0 / float(frame + 1));
+
+    vec3 accumulatedColor = prevColor.rgb * float(frame) + avgColor;
+    vec3 finalColor = accumulatedColor / float(frame + 1);
+    imageStore(outputImage, pix, vec4(finalColor, 1.0));
 }
