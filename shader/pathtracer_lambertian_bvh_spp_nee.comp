@@ -1,0 +1,304 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16) in;
+
+struct BVHNode {
+    vec3 minBounds;
+    vec3 maxBounds;
+    int leftChild;
+    int rightChild;
+    int triangleIndex; // -1 表示非叶节点
+};
+
+struct Triangle {
+    vec3 v0, v1, v2;
+    vec3 n0, n1, n2; // 顶点法线
+    vec3 normal;
+    uint materialID;
+};
+
+struct Material {
+    vec3 albedo;
+    float metallic;
+    float roughness;
+    float ambientOcclusion;
+    float padding1; // pad to 16 bytes
+    float emission;
+};
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D outputImage;
+
+layout(std140, set = 1, binding = 0) buffer Triangles { Triangle tris[]; };
+layout(std140, set = 1, binding = 1) buffer BVHBuffer { BVHNode bvhNodes[]; };
+
+layout(std140, set = 1, binding = 2) uniform MaterialBlock {
+    Material materials[16];
+};
+
+layout(std140, set = 1, binding = 3) uniform CameraData {
+    mat4 invViewProj; // 逆投影矩阵
+    vec3 cameraPos;   // 摄像机位置
+    int frame;        // 当前帧编号
+};
+
+// layout(std140, set = 1, binding = 4) uniform SceneInfo {
+//     uint actual_scene_triangle_count;
+// };
+
+
+#define MAX_BOUNCES 4
+#define SPP 4
+#define PI 3.14159265359
+#define RAY_OFFSET 0.001 // 用于光线偏移避免自相交
+#define PDF_EPSILON 0.0001 // 用于避免PDF过小导致的除零
+
+// === 随机函数 (保持不变) ===
+uint seed;
+float rand() {
+    seed ^= seed << 13;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;
+    return float(seed & 0x00FFFFFF) / float(0x01000000);
+}
+
+// ... (radicalInverse_VdC, hammersley, intersectAABB, intersectBVH - 保持不变) ...
+float radicalInverse_VdC(uint bits) {
+    bits = (bits << 16) | (bits >> 16);
+    bits = ((bits & 0x55555555u) << 1) | ((bits & 0xAAAAAAAAu) >> 1);
+    bits = ((bits & 0x33333333u) << 2) | ((bits & 0xCCCCCCCCu) >> 2);
+    bits = ((bits & 0x0F0F0F0Fu) << 4) | ((bits & 0xF0F0F0F0u) >> 4);
+    bits = ((bits & 0x00FF00FFu) << 8) | ((bits & 0xFF00FF00u) >> 8);
+    return float(bits) * 2.3283064365386963e-10; // / 0x100000000
+}
+
+vec2 hammersley(uint i, uint N) {
+    return vec2(float(i) / float(N), radicalInverse_VdC(i));
+}
+
+bool intersectAABB(vec3 rayOrigin, vec3 rayDir, vec3 minBounds, vec3 maxBounds, out float tMin, out float tMax) {
+    vec3 invDir = 1.0 / rayDir;
+    vec3 t0 = (minBounds - rayOrigin) * invDir;
+    vec3 t1 = (maxBounds - rayOrigin) * invDir;
+    vec3 tMinVec = min(t0, t1);
+    vec3 tMaxVec = max(t0, t1);
+    tMin = max(max(tMinVec.x, tMinVec.y), tMinVec.z);
+    tMax = min(min(tMaxVec.x, tMaxVec.y), tMaxVec.z);
+    return tMax >= max(tMin, 0.0);
+}
+
+bool intersectBVH(vec3 rayOrigin, vec3 rayDir, out int hitIndex, out float t, out vec3 normal) {
+    int stack[64];
+    int stackPtr = 0;
+    stack[stackPtr++] = 0;
+    t = 1e20;
+    hitIndex = -1;
+    while (stackPtr > 0) {
+        int nodeIndex = stack[--stackPtr];
+        BVHNode node = bvhNodes[nodeIndex];
+        float tAABBMin, tAABBMax;
+        if (!intersectAABB(rayOrigin, rayDir, node.minBounds, node.maxBounds, tAABBMin, tAABBMax) || tAABBMin > t) {
+            continue;
+        }
+        if (node.triangleIndex >= 0) {
+            Triangle tri = tris[node.triangleIndex];
+            vec3 edge1 = tri.v1 - tri.v0;
+            vec3 edge2 = tri.v2 - tri.v0;
+            vec3 pvec = cross(rayDir, edge2);
+            float det = dot(edge1, pvec);
+            if (abs(det) < 0.0001) continue;
+            float invDet = 1.0 / det;
+            vec3 tvec = rayOrigin - tri.v0;
+            float u = dot(tvec, pvec) * invDet;
+            if (u < 0.0 || u > 1.0) continue;
+            vec3 qvec = cross(tvec, edge1);
+            float v = dot(rayDir, qvec) * invDet;
+            if (v < 0.0 || u + v > 1.0) continue;
+            float tmpT = dot(edge2, qvec) * invDet;
+            vec3 bary = vec3(1.0 - u - v, u, v);
+            if (tmpT > RAY_OFFSET && tmpT < t) { // 使用RAY_OFFSET作为最小t值
+                t = tmpT;
+                hitIndex = node.triangleIndex;
+                normal = normalize(tri.n0 * bary.x + tri.n1 * bary.y + tri.n2 * bary.z);
+            }
+        } else {
+            stack[stackPtr++] = node.leftChild;
+            stack[stackPtr++] = node.rightChild;
+        }
+    }
+    return hitIndex != -1;
+}
+
+
+vec3 sampleHemisphereCosineWeighted(vec3 N_surf) {
+    float u1 = rand();
+    float u2 = rand();
+    float r = sqrt(u1);
+    float theta_ang = 2.0 * PI * u2;
+    vec3 up_axis = abs(N_surf.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent_x = normalize(cross(up_axis, N_surf));
+    vec3 tangent_y = cross(N_surf, tangent_x);
+    return normalize(
+        tangent_x * (r * cos(theta_ang)) +
+        tangent_y * (r * sin(theta_ang)) +
+        N_surf * sqrt(max(0.0, 1.0 - u1))
+    );
+}
+
+vec3 traceRayLambertianNEE(vec3 initialOrigin, vec3 initialDir) {
+    vec3 totalRadiance = vec3(0.0);
+    vec3 throughput = vec3(1.0);
+    vec3 currentRayOrigin = initialOrigin;
+    vec3 currentRayDir = initialDir;
+
+    // 场景中实际的三角形数量
+    uint scene_triangle_count = 1112;
+
+    for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
+        int hitSurfaceIdx;
+        float t_hit;
+        vec3 N_surface;
+        if (!intersectBVH(currentRayOrigin, currentRayDir, hitSurfaceIdx, t_hit, N_surface)) {
+            break;
+        }
+
+        Triangle surface_tri = tris[hitSurfaceIdx];
+        Material surface_mat = materials[surface_tri.materialID];
+        vec3 P_surface = currentRayOrigin + currentRayDir * t_hit;
+
+        // --- 1. 直接光源采样 (Next Event Estimation) ---
+        // 第一步：统计场景中所有光源的数量
+        uint num_actual_lights = 0;
+        for (uint i = 0; i < scene_triangle_count; ++i) {
+            if (materials[tris[i].materialID].emission > 0.0) {
+                num_actual_lights++;
+            }
+        }
+
+        if (num_actual_lights > 0) {
+            // 第二步：随机选择一个光源进行采样
+            // 生成一个 [0, num_actual_lights - 1] 范围内的随机序号
+            int target_light_ordinal = int(rand() * float(num_actual_lights));
+            if (target_light_ordinal >= int(num_actual_lights)) target_light_ordinal = int(num_actual_lights) - 1; // 确保安全
+
+            int light_tri_idx = -1;
+            int current_light_emitter_count = 0;
+            for (uint l_idx = 0; l_idx < scene_triangle_count; ++l_idx) {
+                if (materials[tris[l_idx].materialID].emission > 0.0) {
+                    if (current_light_emitter_count == target_light_ordinal) {
+                        light_tri_idx = int(l_idx);
+                        break; // 找到了我们选中的光源
+                    }
+                    current_light_emitter_count++;
+                }
+            }
+
+            if (light_tri_idx != -1) { // 应该总能找到，因为 num_actual_lights > 0
+                Triangle light_geom = tris[light_tri_idx];
+                Material light_mat = materials[light_geom.materialID];
+
+                float r_light1 = rand();
+                float r_light2 = rand();
+                float su0 = sqrt(r_light1);
+                float b0_l = 1.0 - su0;
+                float b1_l = r_light2 * su0;
+                vec3 P_light = light_geom.v0 * b0_l + light_geom.v1 * b1_l + light_geom.v2 * (1.0 - b0_l - b1_l);
+
+                vec3 N_light = normalize(cross(light_geom.v1 - light_geom.v0, light_geom.v2 - light_geom.v0));
+                if (dot(N_light, P_surface - P_light) < 0.0) {
+                     N_light = -N_light;
+                }
+
+                vec3 dir_to_light_unnormalized = P_light - P_surface;
+                float dist_sq_to_light = dot(dir_to_light_unnormalized, dir_to_light_unnormalized);
+                float dist_to_light = sqrt(dist_sq_to_light);
+                vec3 dir_to_light_normalized = dir_to_light_unnormalized / dist_to_light;
+
+                int shadow_hit_idx_unused;
+                float t_shadow_unused;
+                vec3 N_shadow_unused;
+                bool occluded = intersectBVH(P_surface + N_surface * RAY_OFFSET, dir_to_light_normalized,
+                                             shadow_hit_idx_unused, t_shadow_unused, N_shadow_unused);
+
+                if (!occluded || t_shadow_unused >= dist_to_light - 2 * RAY_OFFSET) {
+                    vec3 light_emission_color = vec3(light_mat.emission);
+                    vec3 brdf_lambertian_val = surface_mat.albedo / PI;
+
+                    float cos_theta_surface = max(0.0, dot(N_surface, dir_to_light_normalized));
+                    float cos_theta_light = max(0.0, dot(N_light, -dir_to_light_normalized));
+
+                    if (cos_theta_surface > PDF_EPSILON && cos_theta_light > PDF_EPSILON) {
+                        float geom_term = cos_theta_surface * cos_theta_light / dist_sq_to_light;
+                        float light_triangle_area = length(cross(light_geom.v1 - light_geom.v0, light_geom.v2 - light_geom.v0)) * 0.5;
+                        
+                        // PDF of sampling P_light on this specific light's area
+                        float pdf_sample_on_light_area = 1.0 / max(light_triangle_area, PDF_EPSILON); 
+                        // PDF of choosing this specific light (uniform selection among all lights)
+                        float pdf_select_this_light = 1.0 / float(num_actual_lights);
+
+                        // Combined PDF for this NEE sample
+                        float pdf_nee = pdf_select_this_light * pdf_sample_on_light_area;
+
+                        if (pdf_nee > PDF_EPSILON) { // Ensure combined PDF is valid
+                             totalRadiance += throughput * light_emission_color * brdf_lambertian_val * geom_term / pdf_nee;
+                        }
+
+                        // ✅ 新增调试：颜色 = N · L （可视化光照方向）
+                        vec3 NdotL_debugColor = vec3(cos_theta_surface);
+                        // totalRadiance += throughput * NdotL_debugColor; // 仅用于调试
+                    }
+                }
+            }
+        }
+
+        // --- 2. BSDF路径贡献 (半球采样，主要贡献间接光) ---
+        // 你之前注释掉了这一行，对于测试NEE是合理的。
+        // 如果要启用，并最终走向MIS，这里需要特殊处理。
+        // if (surface_mat.emission > 0.0) {
+        //     totalRadiance += throughput * vec3(surface_mat.emission);
+        // }
+
+        vec3 next_bsdf_dir = sampleHemisphereCosineWeighted(N_surface);
+        float cos_theta_next_dir = max(0.0, dot(N_surface, next_bsdf_dir));
+
+        if (cos_theta_next_dir <= PDF_EPSILON) {
+             break;
+        }
+        throughput *= surface_mat.albedo; // 对于Lambertian, BRDF * cos / PDF = albedo
+
+        currentRayOrigin = P_surface + N_surface * RAY_OFFSET;
+        currentRayDir = next_bsdf_dir;
+
+        if (bounce > 1) {
+            float p_continue = max(throughput.r, max(throughput.g, throughput.b));
+            p_continue = clamp(p_continue, 0.0f, 0.95f);
+            if (rand() > p_continue) {
+                break;
+            }
+            throughput /= p_continue;
+        }
+        if (dot(throughput, throughput) < 0.0001 && bounce > 2) break;
+    }
+    return totalRadiance;
+}
+
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    vec2 resolution = vec2(imageSize(outputImage));
+    uint base_seed_pix_frame = uint(pix.x + pix.y * uint(resolution.x) + frame * uint(resolution.x * resolution.y));
+
+    vec3 totalColor = vec3(0.0);
+    for (int i = 0; i < SPP; ++i) {
+        seed = base_seed_pix_frame + uint(i * 7331 + gl_GlobalInvocationID.z * 13); // 进一步区分种子
+
+        vec2 jitter_val = vec2(rand(), rand());
+        vec2 uv = (vec2(pix) + jitter_val) / resolution * 2.0 - 1.0;
+        vec4 target = invViewProj * vec4(uv, 0.0, 1.0);
+        vec3 dir = normalize(target.xyz / target.w - cameraPos);
+
+        totalColor += traceRayLambertianNEE(cameraPos, dir);
+    }
+
+    vec3 avgColor = totalColor / float(SPP);
+    vec4 prevColor = imageLoad(outputImage, pix);
+    vec3 accumulatedColor = (frame == 0) ? avgColor : (prevColor.rgb * float(frame) + avgColor) / float(frame + 1);
+    imageStore(outputImage, pix, vec4(accumulatedColor, 1.0));
+}
