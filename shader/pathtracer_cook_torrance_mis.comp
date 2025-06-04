@@ -1,0 +1,475 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16) in;
+
+struct BVHNode {
+    vec3 minBounds;
+    vec3 maxBounds;
+    int leftChild;
+    int rightChild;
+    int triangleIndex; // -1 表示非叶节点
+};
+
+struct Triangle {
+    vec3 v0, v1, v2;
+    vec3 n0, n1, n2; // 顶点法线
+    vec3 normal;     
+    uint materialID;
+};
+
+struct Material {
+    vec3 albedo;
+    float metallic;
+    float roughness;
+    float ambientOcclusion;
+    float padding1;
+    float emission;
+};
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D outputImage;
+layout(std140, set = 1, binding = 0) buffer Triangles { Triangle tris[]; };
+layout(std140, set = 1, binding = 1) buffer BVHBuffer { BVHNode bvhNodes[]; };
+layout(std140, set = 1, binding = 2) uniform MaterialBlock { Material materials[16]; };
+layout(std140, set = 1, binding = 3) uniform CameraData {
+    mat4 invViewProj;
+    vec3 cameraPos;
+    int frame;
+};
+// 假设你有一个方式传递场景中实际的三角形数量
+// layout(std140, set = 1, binding = 4) uniform SceneInfo {
+//     uint actual_scene_triangle_count;
+// };
+uint scene_triangle_count = 111; // 保持你之前的值，但最好通过uniform传入
+
+
+#define MAX_BOUNCES 4
+#define SPP 1
+#define PI 3.14159265359
+#define BRDF_MATH_EPSILON 0.000001f
+#define PDF_VALIDITY_EPSILON 0.0001f
+#define RAY_OFFSET_EPSILON 0.0001f   // 稍微增大表面偏移，以匹配NEE中的RAY_OFFSET
+#define LIGHT_AREA_EPSILON 0.00001f // 用于光源面积计算
+#define NEE_SHADOW_RAY_T_MAX_FACTOR 0.999f // 用于阴影射线与光源距离比较
+
+// === 随机函数 (remains the same) ===
+uint seed;
+float rand() {
+    seed ^= seed << 13;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;
+    return float(seed & 0x00FFFFFF) / float(0x01000000);
+}
+
+// === Cook-Torrance BRDF 辅助函数 ===
+float DistributionGGX(vec3 N, vec3 H, float roughness) {
+    float a = roughness * roughness;
+    a = max(a, BRDF_MATH_EPSILON * BRDF_MATH_EPSILON);
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+    float nom   = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+    return nom / max(denom, BRDF_MATH_EPSILON);
+}
+float GeometrySchlickGGX(float NdotV, float roughness) {
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+    float nom   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+    return nom / max(denom, BRDF_MATH_EPSILON);
+}
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggxV = GeometrySchlickGGX(NdotV, roughness);
+    float ggxL = GeometrySchlickGGX(NdotL, roughness);
+    return ggxV * ggxL;
+}
+vec3 FresnelSchlick(float cosTheta, vec3 F0) {
+    return F0 + (vec3(1.0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// === 坐标系构建 ===
+void createCoordinateSystem(vec3 N, out vec3 Nt, out vec3 Nb) {
+    if (abs(N.x) > abs(N.y)) Nt = normalize(vec3(N.z, 0.0, -N.x));
+    else Nt = normalize(vec3(0.0, -N.z, N.y));
+    Nb = cross(N, Nt);
+}
+vec3 tangentToWorld(vec3 v_tangent, vec3 N_world, vec3 Nt_world, vec3 Nb_world) {
+    return Nt_world * v_tangent.x + Nb_world * v_tangent.y + N_world * v_tangent.z;
+}
+
+// === GGX 重要性采样结构体和函数 ===
+struct GGXSampleInfo {
+    vec3   L;
+    vec3   H;
+    float  pdf_L;
+    bool   isValid;
+};
+
+GGXSampleInfo sampleGGXImportance(vec3 V, vec3 N, float roughness, float r1, float r2) {
+    GGXSampleInfo ggxSmpResult; ggxSmpResult.isValid = false;
+    float alpha = roughness * roughness;
+    alpha = max(alpha, BRDF_MATH_EPSILON * BRDF_MATH_EPSILON);
+    float phi_h = 2.0 * PI * r1;
+    float cos_theta_h_sq = (1.0 - r2) / (1.0 + (alpha * alpha - 1.0) * r2);
+    float cos_theta_h = sqrt(max(0.0, cos_theta_h_sq));
+    float sin_theta_h = sqrt(max(0.0, 1.0 - cos_theta_h_sq));
+    vec3 H_tangent = vec3(sin_theta_h * cos(phi_h), sin_theta_h * sin(phi_h), cos_theta_h);
+    vec3 Nt, Nb; createCoordinateSystem(N, Nt, Nb);
+    ggxSmpResult.H = normalize(tangentToWorld(H_tangent, N, Nt, Nb));
+    ggxSmpResult.L = reflect(-V, ggxSmpResult.H);
+    float NdotH = max(dot(N, ggxSmpResult.H), 0.0);
+    float VdotH = max(dot(V, ggxSmpResult.H), 0.0);
+    if (VdotH <= PDF_VALIDITY_EPSILON || NdotH <= PDF_VALIDITY_EPSILON || dot(N, ggxSmpResult.L) <= PDF_VALIDITY_EPSILON){
+        return ggxSmpResult;
+    }
+    float D_val = DistributionGGX(N, ggxSmpResult.H, roughness);
+    ggxSmpResult.pdf_L = (D_val * NdotH) / max(4.0 * VdotH, PDF_VALIDITY_EPSILON);
+    if (ggxSmpResult.pdf_L <= PDF_VALIDITY_EPSILON){
+        return ggxSmpResult;
+    }
+    ggxSmpResult.isValid = true;
+    return ggxSmpResult;
+}
+
+// === 余弦加权半球采样 ===
+vec3 sampleHemisphereCosineWeighted(vec3 N, float r1, float r2) {
+    float r_val = sqrt(r1);
+    float theta = 2.0 * PI * r2; // Renamed r to r_val
+    vec3 up = abs(N.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, N));
+    vec3 bitangent = cross(N, tangent);
+    return normalize(tangent * (r_val * cos(theta)) + bitangent * (r_val * sin(theta)) + N * sqrt(max(0.0, 1.0 - r1)));
+}
+
+// === PDF 计算函数 ===
+float pdfGGX(vec3 L, vec3 V, vec3 N, float roughness) {
+    if (dot(N, L) <= PDF_VALIDITY_EPSILON) return 0.0; vec3 H = normalize(V + L);
+    float NdotH = max(dot(N, H), 0.0);
+    float VdotH = max(dot(V, H), 0.0);
+    if (VdotH <= PDF_VALIDITY_EPSILON) return 0.0;
+    float D_val = DistributionGGX(N, H, roughness);
+    return (D_val * NdotH) / max(4.0 * VdotH, PDF_VALIDITY_EPSILON);
+}
+float pdfCosine(vec3 L, vec3 N) {
+    float NdotL = max(dot(N, L), 0.0);
+    if (NdotL <= PDF_VALIDITY_EPSILON) return 0.0;
+    return NdotL / PI;
+}
+
+// === BVH Intersection ===
+bool intersectAABB(vec3 rayOrigin, vec3 rayDir, vec3 minBounds, vec3 maxBounds, out float tMin, out float tMax) {
+    vec3 invDir = 1.0 / rayDir;
+    vec3 t0s = (minBounds - rayOrigin) * invDir;
+    vec3 t1s = (maxBounds - rayOrigin) * invDir;
+    vec3 tMinVec = min(t0s, t1s);
+    vec3 tMaxVec = max(t0s, t1s);
+    tMin = max(max(tMinVec.x, tMinVec.y), tMinVec.z);
+    tMax = min(min(tMaxVec.x, tMaxVec.y), tMaxVec.z);
+    return tMax >= max(tMin, 0.0);
+}
+bool intersectBVH(vec3 rayOrigin, vec3 rayDir, out int hitIndex, out float t, out vec3 hitNormal) {
+    int stack[64];
+    int stackPtr = 0;
+    stack[stackPtr++] = 0;
+    t = 1e20;
+    hitIndex = -1;
+    while (stackPtr > 0) {
+        int nodeIndex = stack[--stackPtr];
+        BVHNode node = bvhNodes[nodeIndex];
+        float tAABBMin, tAABBMax;
+        if (!intersectAABB(rayOrigin, rayDir, node.minBounds, node.maxBounds, tAABBMin, tAABBMax) || tAABBMin > t) continue;
+        if (node.triangleIndex >= 0) {
+            Triangle tri_bvh = tris[node.triangleIndex];
+            vec3 edge1 = tri_bvh.v1 - tri_bvh.v0;
+            vec3 edge2 = tri_bvh.v2 - tri_bvh.v0; // Renamed tri to tri_bvh
+            vec3 pvec = cross(rayDir, edge2);
+            float det = dot(edge1, pvec);
+            if (abs(det) < BRDF_MATH_EPSILON) continue;
+            float invDet = 1.0 / det;
+            vec3 tvec = rayOrigin - tri_bvh.v0;
+            float u = dot(tvec, pvec) * invDet;
+            if (u < 0.0 || u > 1.0) continue;
+            vec3 qvec = cross(tvec, edge1);
+            float v_coord = dot(rayDir, qvec) * invDet;
+            if (v_coord < 0.0 || u + v_coord > 1.0) continue;
+            float current_t = dot(edge2, qvec) * invDet;
+            if (current_t > RAY_OFFSET_EPSILON && current_t < t) {
+                t = current_t; hitIndex = node.triangleIndex;
+                vec3 bary = vec3(1.0 - u - v_coord, u, v_coord);
+                hitNormal = normalize(tri_bvh.n0 * bary.x + tri_bvh.n1 * bary.y + tri_bvh.n2 * bary.z);
+            }
+        } else { stack[stackPtr++] = node.leftChild; stack[stackPtr++] = node.rightChild; }
+    }
+    return hitIndex != -1;
+}
+
+// === BRDF Evaluation Function ===
+vec3 evaluateCookTorranceBRDF(vec3 L, vec3 V, vec3 N, Material mat, out vec3 F_out) {
+    vec3 H = normalize(V + L);
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float VdotH = max(dot(V, H), 0.0); // HdotV in some notations
+
+    if (NdotL <= BRDF_MATH_EPSILON || NdotV <= BRDF_MATH_EPSILON) return vec3(0.0);
+
+    vec3 F0 = vec3(0.04); F0 = mix(F0, mat.albedo, mat.metallic);
+    F_out = FresnelSchlick(VdotH, F0); // VdotH or LdotH for Fresnel with half-vector
+
+    float D = DistributionGGX(N, H, mat.roughness);
+    float G = GeometrySmith(N, V, L, mat.roughness);
+
+    vec3 specularBRDF = (D * G * F_out) / max(4.0 * NdotV * NdotL, BRDF_MATH_EPSILON);
+    vec3 kS = F_out; // Specular reflection coefficient
+    vec3 kD = (vec3(1.0) - kS) * (1.0 - mat.metallic); // Diffuse reflection coefficient
+    vec3 diffuseBRDF_lambertian = mat.albedo / PI;
+
+    return kD * diffuseBRDF_lambertian + specularBRDF;
+}
+
+// === 主追踪函数 (Cook-Torrance with NEE and MIS) ===
+vec3 traceRay(vec3 initialOrigin, vec3 initialDir) {
+    vec3 throughput = vec3(1.0);
+    vec3 radiance = vec3(0.0);
+    vec3 currentOrigin = initialOrigin;
+    vec3 currentDir = initialDir;
+    // Store the PDF of the BSDF path that led to the current hit, for MIS with NEE if we hit a light
+    float pdf_bsdf_prev_solid_angle = 0.0;
+
+
+    for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
+        int hitSurfaceIdx; float t_hit; vec3 N_surface; // N_surface is the interpolated normal at hit point
+        vec3 P_prev = currentOrigin; // Store previous origin for distance calculation if we hit a light
+
+        if (!intersectBVH(currentOrigin, currentDir, hitSurfaceIdx, t_hit, N_surface)) {
+            // If ray misses scene, and it's not the primary ray, it might have come from a surface.
+            // If it was supposed to hit a light (e.g. skybox), handle here. For now, just break.
+            break;
+        }
+
+        Triangle surface_tri = tris[hitSurfaceIdx];
+        Material surface_mat = materials[surface_tri.materialID];
+        vec3 P_surface = currentOrigin + currentDir * t_hit;
+        vec3 V_eye = -currentDir; // Vector from surface point to eye/previous point
+
+
+        // --- Handle hitting a light source via BSDF path (MIS with NEE) ---
+        if (surface_mat.emission > 0.0) {
+            float mis_weight = 1.0; // Default to 1 if no NEE was possible or applicable
+            if (bounce > 0) { // Only apply MIS if it's not the first hit from camera
+                               // (or if camera directly sees a light, NEE is not performed for that path)
+                
+                // 1. Calculate PDF of BSDF sampling this light (pdf_bsdf_area)
+                // pdf_bsdf_prev_solid_angle was the PDF of sampling 'currentDir' from 'P_prev'
+                float dist_sq_to_light_bsdf_hit = t_hit * t_hit; // t_hit is distance from P_prev to P_surface
+                vec3 N_light_surface = N_surface; // Normal of the light surface we just hit
+                // Ensure N_light_surface points outwards relative to the incoming ray currentDir
+                if (dot(N_light_surface, -currentDir) < 0.0) N_light_surface = -N_light_surface;
+                float cos_theta_on_light_bsdf_hit = abs(dot(N_light_surface, -currentDir)); // Cosine at the light surface
+
+                float pdf_bsdf_area = 0.0;
+                if (cos_theta_on_light_bsdf_hit > PDF_VALIDITY_EPSILON && pdf_bsdf_prev_solid_angle > PDF_VALIDITY_EPSILON) {
+                    pdf_bsdf_area = pdf_bsdf_prev_solid_angle * dist_sq_to_light_bsdf_hit / cos_theta_on_light_bsdf_hit;
+                }
+
+                // 2. Calculate PDF of NEE sampling this specific light hit point (pdf_nee_area)
+                // This requires knowing how many lights are in the scene for the selection PDF
+                uint num_actual_lights_for_mis = 0;
+                for (uint i = 0; i < scene_triangle_count; ++i) {
+                    if (materials[tris[i].materialID].emission > 0.0) num_actual_lights_for_mis++;
+                }
+
+                float pdf_nee_area = 0.0;
+                if (num_actual_lights_for_mis > 0) {
+                    float light_triangle_area_bsdf_hit = length(cross(surface_tri.v1 - surface_tri.v0, surface_tri.v2 - surface_tri.v0)) * 0.5;
+                    if (light_triangle_area_bsdf_hit > LIGHT_AREA_EPSILON) {
+                        float pdf_select_this_light_for_mis = 1.0 / float(num_actual_lights_for_mis);
+                        float pdf_sample_on_light_area_for_mis = 1.0 / light_triangle_area_bsdf_hit;
+                        pdf_nee_area = pdf_select_this_light_for_mis * pdf_sample_on_light_area_for_mis;
+                    }
+                }
+
+                // 3. Calculate MIS weight (Power Heuristic with power=2)
+                if (pdf_bsdf_area > PDF_VALIDITY_EPSILON && pdf_nee_area > PDF_VALIDITY_EPSILON) {
+                    mis_weight = (pdf_bsdf_area * pdf_bsdf_area) / ((pdf_bsdf_area * pdf_bsdf_area) + (pdf_nee_area * pdf_nee_area));
+                } else if (pdf_bsdf_area > PDF_VALIDITY_EPSILON) {
+                    mis_weight = 1.0; // Only BSDF could have found it
+                } else {
+                    mis_weight = 0.0; // Should not happen if we hit a light via BSDF and pdf_bsdf_prev_solid_angle was valid
+                }
+            }
+            radiance += throughput * vec3(surface_mat.emission) * mis_weight;
+            break; // Path ends if it hits a light source
+        }
+
+
+        // --- 1. Next Event Estimation (NEE) ---
+        uint num_actual_lights = 0; // Recalculate for NEE, could be different if scene changes dynamically
+        for (uint i = 0; i < scene_triangle_count; ++i) {
+            if (materials[tris[i].materialID].emission > 0.0) num_actual_lights++;
+        }
+
+        if (num_actual_lights > 0) { // No surface_mat.emission check here, NEE is tried for all non-emissive surfaces
+            int target_light_ordinal = int(rand() * float(num_actual_lights));
+            if (target_light_ordinal >= int(num_actual_lights)) target_light_ordinal = int(num_actual_lights) - 1;
+
+            int light_tri_idx = -1;
+            int current_light_emitter_count = 0;
+            for (uint l_idx = 0; l_idx < scene_triangle_count; ++l_idx) {
+                if (materials[tris[l_idx].materialID].emission > 0.0) {
+                    if (current_light_emitter_count == target_light_ordinal) {
+                        light_tri_idx = int(l_idx); break;
+                    }
+                    current_light_emitter_count++;
+                }
+            }
+
+            if (light_tri_idx != -1) {
+                Triangle light_geom = tris[light_tri_idx]; Material light_mat = materials[light_geom.materialID];
+                float r_light1 = rand(); float r_light2 = rand(); float su0 = sqrt(r_light1);
+                float b0_l = 1.0 - su0; float b1_l = r_light2 * su0;
+                vec3 P_light = light_geom.v0 * b0_l + light_geom.v1 * b1_l + light_geom.v2 * (1.0 - b0_l - b1_l);
+                vec3 N_light = normalize(cross(light_geom.v1 - light_geom.v0, light_geom.v2 - light_geom.v0));
+                if (dot(N_light, P_surface - P_light) < 0.0) N_light = -N_light;
+
+                vec3 dir_to_light_unnormalized = P_light - P_surface;
+                float dist_sq_to_light = dot(dir_to_light_unnormalized, dir_to_light_unnormalized);
+                float dist_to_light = sqrt(dist_sq_to_light);
+                vec3 dir_to_light_normalized = dir_to_light_unnormalized / dist_to_light;
+
+                int shadow_hit_idx_unused; float t_shadow_unused; vec3 N_shadow_unused_nee;
+                bool occluded = intersectBVH(P_surface + N_surface * RAY_OFFSET_EPSILON, dir_to_light_normalized,
+                                             shadow_hit_idx_unused, t_shadow_unused, N_shadow_unused_nee);
+                
+                // Check if the occluder is the light source itself (or very close to it)
+                bool light_is_occluder = false;
+                if(occluded && shadow_hit_idx_unused == light_tri_idx){
+                    light_is_occluder = true;
+                }
+
+
+                if (!occluded || t_shadow_unused >= dist_to_light - 2.0 * RAY_OFFSET_EPSILON || light_is_occluder) {
+                    vec3 fresnel_nee;
+                    vec3 brdf_val_nee = evaluateCookTorranceBRDF(dir_to_light_normalized, V_eye, N_surface, surface_mat, fresnel_nee);
+                    float cos_theta_surface_nee = max(0.0, dot(N_surface, dir_to_light_normalized));
+                    float cos_theta_light_nee = max(0.0, dot(N_light, -dir_to_light_normalized));
+
+                    if (cos_theta_surface_nee > PDF_VALIDITY_EPSILON && cos_theta_light_nee > PDF_VALIDITY_EPSILON) {
+                        float geom_term_nee = cos_theta_surface_nee * cos_theta_light_nee / dist_sq_to_light;
+                        float light_triangle_area = length(cross(light_geom.v1 - light_geom.v0, light_geom.v2 - light_geom.v0)) * 0.5;
+                        float pdf_sample_on_light_area = 1.0 / max(light_triangle_area, LIGHT_AREA_EPSILON);
+                        float pdf_select_this_light = 1.0 / float(num_actual_lights);
+                        float pdf_nee_val_area = pdf_select_this_light * pdf_sample_on_light_area;
+
+                        if (pdf_nee_val_area > PDF_VALIDITY_EPSILON) {
+                            float mis_weight_nee = 1.0;
+
+                            // Calculate PDF of BSDF sampling this NEE direction (pdf_bsdf_solid_angle)
+                            // then convert to area PDF (pdf_bsdf_area_for_nee)
+                            vec3 F0_bsdf_for_nee = vec3(0.04); F0_bsdf_for_nee = mix(F0_bsdf_for_nee, surface_mat.albedo, surface_mat.metallic);
+                            float f0_avg_bsdf_for_nee = (F0_bsdf_for_nee.x + F0_bsdf_for_nee.y + F0_bsdf_for_nee.z) / 3.0;
+                            float prob_sample_specular_for_nee = surface_mat.metallic + (1.0 - surface_mat.metallic) * f0_avg_bsdf_for_nee;
+                            prob_sample_specular_for_nee = clamp(prob_sample_specular_for_nee, 0.1, 0.9);
+
+                            float pdf_ggx_for_nee_dir = pdfGGX(dir_to_light_normalized, V_eye, N_surface, surface_mat.roughness);
+                            float pdf_cosine_for_nee_dir = pdfCosine(dir_to_light_normalized, N_surface);
+                            float pdf_bsdf_solid_angle_for_nee_dir = (prob_sample_specular_for_nee * pdf_ggx_for_nee_dir) +
+                                                                  ((1.0 - prob_sample_specular_for_nee) * pdf_cosine_for_nee_dir);
+
+                            float pdf_bsdf_area_for_nee = 0.0;
+                            if (cos_theta_light_nee > PDF_VALIDITY_EPSILON && pdf_bsdf_solid_angle_for_nee_dir > PDF_VALIDITY_EPSILON) {
+                                pdf_bsdf_area_for_nee = pdf_bsdf_solid_angle_for_nee_dir * dist_sq_to_light / cos_theta_light_nee;
+                            }
+
+                            if (pdf_bsdf_area_for_nee > PDF_VALIDITY_EPSILON) {
+                                mis_weight_nee = (pdf_nee_val_area * pdf_nee_val_area) /
+                                                 ((pdf_nee_val_area * pdf_nee_val_area) + (pdf_bsdf_area_for_nee * pdf_bsdf_area_for_nee));
+                            }
+                            // else if pdf_nee_val_area is valid, mis_weight_nee remains 1.0
+
+                            radiance += throughput * vec3(light_mat.emission) * brdf_val_nee * geom_term_nee * mis_weight_nee / pdf_nee_val_area;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- 2. BSDF Sampling (Indirect Illumination) ---
+        // (The part for BSDF hitting a light is now at the top of the loop)
+
+        vec3 L_sampled_bsdf;
+        float pdf_ggx_bsdf;
+        float pdf_cosine_bsdf;
+        float prob_sample_specular_bsdf;
+
+        vec3 F0_bsdf = vec3(0.04); F0_bsdf = mix(F0_bsdf, surface_mat.albedo, surface_mat.metallic);
+        float f0_avg_bsdf = (F0_bsdf.x + F0_bsdf.y + F0_bsdf.z) / 3.0;
+        prob_sample_specular_bsdf = surface_mat.metallic + (1.0 - surface_mat.metallic) * f0_avg_bsdf;
+        prob_sample_specular_bsdf = clamp(prob_sample_specular_bsdf, 0.1, 0.9); // Clamp to avoid 0 or 1
+
+        bool sampled_specular_bsdf_path = false;
+        if (rand() < prob_sample_specular_bsdf) {
+            GGXSampleInfo ggxSample = sampleGGXImportance(V_eye, N_surface, surface_mat.roughness, rand(), rand());
+            if (!ggxSample.isValid) break;
+            L_sampled_bsdf = ggxSample.L;
+            pdf_ggx_bsdf = ggxSample.pdf_L;
+            pdf_cosine_bsdf = pdfCosine(L_sampled_bsdf, N_surface); // Also calculate for combined PDF
+            sampled_specular_bsdf_path = true;
+        } else {
+            L_sampled_bsdf = sampleHemisphereCosineWeighted(N_surface, rand(), rand());
+            pdf_cosine_bsdf = pdfCosine(L_sampled_bsdf, N_surface);
+            if (pdf_cosine_bsdf <= PDF_VALIDITY_EPSILON) break;
+            pdf_ggx_bsdf = pdfGGX(L_sampled_bsdf, V_eye, N_surface, surface_mat.roughness); // Also calculate for combined PDF
+        }
+
+        float NdotL_bsdf = max(dot(N_surface, L_sampled_bsdf), 0.0);
+        if (NdotL_bsdf <= PDF_VALIDITY_EPSILON) break;
+
+        vec3 fresnel_bsdf;
+        vec3 totalBRDF_bsdf = evaluateCookTorranceBRDF(L_sampled_bsdf, V_eye, N_surface, surface_mat, fresnel_bsdf);
+        if (dot(totalBRDF_bsdf, totalBRDF_bsdf) < BRDF_MATH_EPSILON * BRDF_MATH_EPSILON) break;
+
+
+        float combined_pdf_bsdf_solid_angle = (prob_sample_specular_bsdf * pdf_ggx_bsdf) + ((1.0 - prob_sample_specular_bsdf) * pdf_cosine_bsdf);
+        if (combined_pdf_bsdf_solid_angle <= PDF_VALIDITY_EPSILON) break;
+        
+        pdf_bsdf_prev_solid_angle = combined_pdf_bsdf_solid_angle; // Store for next bounce if it hits a light
+
+        throughput *= totalBRDF_bsdf * NdotL_bsdf / combined_pdf_bsdf_solid_angle;
+
+        // Russian Roulette
+        if (bounce > 1) { // Start Russian Roulette after a few bounces
+            float p_continue = max(throughput.r, max(throughput.g, throughput.b));
+            p_continue = clamp(p_continue, 0.0f, 0.95f); // Max continuation probability
+            if (rand() > p_continue || p_continue < 0.01) break; // Terminate if random number is greater or throughput too low
+            throughput /= p_continue;
+        }
+        if (dot(throughput, throughput) < BRDF_MATH_EPSILON * BRDF_MATH_EPSILON && bounce > 2) break;
+
+
+        currentOrigin = P_surface + N_surface * RAY_OFFSET_EPSILON;
+        currentDir = L_sampled_bsdf;
+    }
+    return radiance;
+}
+
+// === Main Entry ===
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    vec2 resolution = vec2(imageSize(outputImage));
+    uint base_seed_pixel_frame = uint(pix.x * 1973 + pix.y * 9277 + frame * 26699 + gl_GlobalInvocationID.z * 7); // Added invocation ID for more seed variation
+    vec3 totalColor = vec3(0.0);
+    for (int i = 0; i < SPP; ++i) {
+        seed = base_seed_pixel_frame + uint(i * 12347);
+        float r_jitter1 = rand(); float r_jitter2 = rand();
+        vec2 uv = (vec2(pix) + vec2(r_jitter1, r_jitter2)) / resolution * 2.0 - 1.0;
+        vec4 target = invViewProj * vec4(uv, 0.0, 1.0);
+        vec3 rayDir = normalize(target.xyz / target.w - cameraPos);
+        totalColor += traceRay(cameraPos, rayDir);
+    }
+    vec3 avgColor = totalColor / float(SPP);
+    vec4 prevColor = imageLoad(outputImage, pix);
+    vec3 accumulatedColor = (frame == 0) ? avgColor : (prevColor.rgb * float(frame) + avgColor) / float(frame + 1);
+    imageStore(outputImage, pix, vec4(accumulatedColor, 1.0));
+}

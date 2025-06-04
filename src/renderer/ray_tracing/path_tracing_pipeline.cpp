@@ -217,7 +217,7 @@ VkCommandBuffer PathTracingPipeline::recordCommandBuffer(uint32_t frameIndex, ui
 
 void PathTracingPipeline::createPathTracingPipeline() {
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
-    std::string compute_shader_code_path = "../shader/pathtracer_lambertian_bvh_spp.comp";
+    std::string compute_shader_code_path = "../shader/pathtracer_cook_torrance_mis.comp";
     // std::string compute_shader_code_path = "../shader/pathTracer_lambertian.comp";
 
     std::string cs = vulkanUtils.readFileToString(compute_shader_code_path);

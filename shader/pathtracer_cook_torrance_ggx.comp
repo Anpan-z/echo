@@ -1,0 +1,356 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16) in;
+
+struct BVHNode {
+    vec3 minBounds;
+    vec3 maxBounds;
+    int leftChild;
+    int rightChild;
+    int triangleIndex; // -1 表示非叶节点
+};
+
+struct Triangle {
+    vec3 v0, v1, v2;
+    vec3 n0, n1, n2; // 顶点法线
+    vec3 normal;     
+    uint materialID;
+};
+
+struct Material {
+    vec3 albedo;
+    float metallic;
+    float roughness;
+    float ambientOcclusion; // 环境光遮蔽
+    float padding1;         // 确保对齐
+    float emission;         // 自发光强度
+};
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D outputImage;
+
+layout(std140, set = 1, binding = 0) buffer Triangles { Triangle tris[]; };
+layout(std140, set = 1, binding = 1) buffer BVHBuffer { BVHNode bvhNodes[]; };
+
+layout(std140, set = 1, binding = 2) uniform MaterialBlock {
+    Material materials[16]; // 假设最多16种材质
+};
+
+layout(std140, set = 1, binding = 3) uniform CameraData {
+    mat4 invViewProj; // 逆视图投影矩阵
+    vec3 cameraPos;   // 摄像机位置
+    int frame;        // 当前帧编号
+};
+
+#define MAX_BOUNCES 4
+#define SPP 4 // 每像素采样数
+#define PI 3.14159265359
+#define EPSILON 0.0001 // 一个小的偏移量或阈值
+
+// === 随机函数 ===
+uint seed;
+float rand() {
+    seed ^= seed << 13;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;
+    return float(seed & 0x00FFFFFF) / float(0x01000000);
+}
+
+// === Cook-Torrance BRDF 辅助函数 ===
+float DistributionGGX(vec3 N, vec3 H, float roughness) {
+    float a = roughness * roughness;
+    a = max(a, EPSILON * EPSILON); // 防止 a 为0导致问题
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+
+    float nom   = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return nom / max(denom, EPSILON);
+}
+
+float GeometrySchlickGGX(float NdotV, float roughness) {
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+    float nom   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+    return nom / max(denom, EPSILON);
+}
+
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggxV = GeometrySchlickGGX(NdotV, roughness);
+    float ggxL = GeometrySchlickGGX(NdotL, roughness);
+    return ggxV * ggxL;
+}
+
+vec3 FresnelSchlick(float cosTheta, vec3 F0) {
+    return F0 + (vec3(1.0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// === 坐标系构建 ===
+void createCoordinateSystem(vec3 N, out vec3 Nt, out vec3 Nb) {
+    if (abs(N.x) > abs(N.y))
+        Nt = normalize(vec3(N.z, 0.0, -N.x));
+    else
+        Nt = normalize(vec3(0.0, -N.z, N.y));
+    Nb = cross(N, Nt);
+}
+
+vec3 tangentToWorld(vec3 v_tangent, vec3 N_world, vec3 Nt_world, vec3 Nb_world) {
+    return Nt_world * v_tangent.x + Nb_world * v_tangent.y + N_world * v_tangent.z;
+}
+
+// === GGX 重要性采样 ===
+// 根据GGX NDF采样微表面法线H，然后派生出L，并计算L的PDF
+// V: 观察方向 (从表面指向观察者/上一碰撞点)
+// N: 宏观表面法线
+// roughness: 材质粗糙度
+// r1, r2: 两个 [0,1) 范围的随机数
+struct GGXImportanceSample {
+    vec3 L;       // 采样的出射光线方向 (世界空间)
+    vec3 H;       // 采样的微表面法线 H (世界空间)
+    float pdf_L;   // 采样到 L 方向的概率密度函数 (PDF w.r.t. solid angle)
+    bool isValid; // 采样是否有效
+};
+
+GGXImportanceSample sampleGGXImportance(vec3 V, vec3 N, float roughness, float r1, float r2) {
+    GGXImportanceSample ggxSmpResult;
+    ggxSmpResult.isValid = false;
+
+    float alpha = roughness * roughness;
+    alpha = max(alpha, EPSILON * EPSILON); // 确保 alpha 不为零，避免除零
+
+    // 1. 在切线空间中采样微表面法线 H_tangent
+    //    这个采样方法是针对 D(H) * cos(theta_H) 进行重要性采样的
+    float phi_h = 2.0 * PI * r1;
+    float cos_theta_h_sq = (1.0 - r2) / (1.0 + (alpha * alpha - 1.0) * r2);
+    float cos_theta_h = sqrt(max(0.0, cos_theta_h_sq));
+    float sin_theta_h = sqrt(max(0.0, 1.0 - cos_theta_h_sq));
+
+    vec3 H_tangent;
+    H_tangent.x = sin_theta_h * cos(phi_h);
+    H_tangent.y = sin_theta_h * sin(phi_h);
+    H_tangent.z = cos_theta_h; // N_tangent is (0,0,1)
+
+    // 2. 将 H_tangent 转换到世界空间得到 H_world
+    vec3 Nt, Nb;
+    createCoordinateSystem(N, Nt, Nb);
+    ggxSmpResult.H = normalize(tangentToWorld(H_tangent, N, Nt, Nb));
+
+    // 3. 根据 H_world 和 V 计算出射方向 L_world
+    ggxSmpResult.L = reflect(-V, ggxSmpResult.H); // L = 2 * dot(V,H) * H - V
+
+    // 4. 计算采样到 L_world 的 PDF
+    //    PDF_H_projected = D(H) * dot(N,H)  (PDF of H w.r.t. solid angle in macrosurface measure)
+    //    PDF_L = PDF_H_projected / (4 * dot(V,H))
+    float NdotH = max(dot(N, ggxSmpResult.H), 0.0);
+    float VdotH = max(dot(V, ggxSmpResult.H), 0.0); // V是出射到观察者的方向，H是微表面法线
+
+    if (VdotH <= EPSILON || NdotH <= EPSILON) { // V.H <= 0 意味着无法从这个H反射到V
+        return ggxSmpResult; // isValid is false
+    }
+    if (dot(N, ggxSmpResult.L) <= EPSILON) { // L在表面之下
+        return ggxSmpResult; // isValid is false
+    }
+
+
+    float D_val = DistributionGGX(N, ggxSmpResult.H, roughness);
+    // PDF_L = (D(H) * N.H) / (4 * V.H)
+    ggxSmpResult.pdf_L = (D_val * NdotH) / max(4.0 * VdotH, EPSILON);
+
+
+    if (ggxSmpResult.pdf_L <= EPSILON) {
+        return ggxSmpResult; // isValid is false
+    }
+
+    ggxSmpResult.isValid = true;
+    return ggxSmpResult;
+}
+
+
+// === 光线与 AABB 相交测试 ===
+bool intersectAABB(vec3 rayOrigin, vec3 rayDir, vec3 minBounds, vec3 maxBounds, out float tMin, out float tMax) {
+    vec3 invDir = 1.0 / rayDir;
+    vec3 t0s = (minBounds - rayOrigin) * invDir;
+    vec3 t1s = (maxBounds - rayOrigin) * invDir;
+    vec3 tMinVec = min(t0s, t1s);
+    vec3 tMaxVec = max(t0s, t1s);
+    tMin = max(max(tMinVec.x, tMinVec.y), tMinVec.z);
+    tMax = min(min(tMaxVec.x, tMaxVec.y), tMaxVec.z);
+    return tMax >= max(tMin, 0.0);
+}
+
+// === 使用 BVH 进行光线与三角形的加速相交测试 ===
+bool intersectBVH(vec3 rayOrigin, vec3 rayDir, out int hitIndex, out float t, out vec3 hitNormal) {
+    int stack[64];
+    int stackPtr = 0;
+    stack[stackPtr++] = 0;
+    t = 1e20;
+    hitIndex = -1;
+    while (stackPtr > 0) {
+        int nodeIndex = stack[--stackPtr];
+        BVHNode node = bvhNodes[nodeIndex];
+        float tAABBMin, tAABBMax;
+        if (!intersectAABB(rayOrigin, rayDir, node.minBounds, node.maxBounds, tAABBMin, tAABBMax) || tAABBMin > t) {
+            continue;
+        }
+        if (node.triangleIndex >= 0) {
+            Triangle tri = tris[node.triangleIndex];
+            vec3 edge1 = tri.v1 - tri.v0;
+            vec3 edge2 = tri.v2 - tri.v0;
+            vec3 pvec = cross(rayDir, edge2);
+            float det = dot(edge1, pvec);
+            if (abs(det) < EPSILON) continue;
+            float invDet = 1.0 / det;
+            vec3 tvec = rayOrigin - tri.v0;
+            float u = dot(tvec, pvec) * invDet;
+            if (u < 0.0 || u > 1.0) continue;
+            vec3 qvec = cross(tvec, edge1);
+            float v = dot(rayDir, qvec) * invDet;
+            if (v < 0.0 || u + v > 1.0) continue;
+            float current_t = dot(edge2, qvec) * invDet;
+            vec3 barycentricCoords = vec3(1.0 - u - v, u, v);
+            if (current_t > EPSILON && current_t < t) {
+                t = current_t;
+                hitIndex = node.triangleIndex;
+                hitNormal = normalize(
+                    tri.n0 * barycentricCoords.x +
+                    tri.n1 * barycentricCoords.y +
+                    tri.n2 * barycentricCoords.z
+                );
+            }
+        } else {
+            stack[stackPtr++] = node.leftChild;
+            stack[stackPtr++] = node.rightChild;
+        }
+    }
+    return hitIndex != -1;
+}
+
+// === 主追踪函数 (Cook-Torrance with Importance Sampling) ===
+vec3 traceRay(vec3 initialOrigin, vec3 initialDir) {
+    vec3 throughput = vec3(1.0);
+    vec3 radiance = vec3(0.0);
+    vec3 currentOrigin = initialOrigin;
+    vec3 currentDir = initialDir;
+
+    for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
+        int hitIndex;
+        float t;
+        vec3 N_hit; // 击中点的表面法线
+        if (!intersectBVH(currentOrigin, currentDir, hitIndex, t, N_hit)) {
+            break;
+        }
+
+        Triangle tri = tris[hitIndex];
+        Material mat = materials[tri.materialID];
+        vec3 hitPos = currentOrigin + currentDir * t;
+
+        radiance += throughput * vec3(mat.emission);
+
+        vec3 V = -currentDir; // 观察方向 (从表面指向上一碰撞点/相机)
+        
+        // --- 使用GGX重要性采样获取 L, H 和 PDF_L ---
+        float r_sample1 = rand();
+        float r_sample2 = rand();
+        GGXImportanceSample ggxSample = sampleGGXImportance(V, N_hit, mat.roughness, r_sample1, r_sample2);
+
+        if (!ggxSample.isValid) { // 如果重要性采样失败 (例如PDF过小或方向无效)
+            break; // 终止当前路径
+        }
+
+        vec3 L = ggxSample.L;
+        vec3 H = ggxSample.H;
+        float pdf_L = ggxSample.pdf_L;
+        float NdotL = max(dot(N_hit, L), 0.0); // NdotL 应该在 sampleGGXImportance 内部检查过了
+
+        // --- 计算 Cook-Torrance BRDF ---
+        vec3 F0 = vec3(0.04);
+        F0 = mix(F0, mat.albedo, mat.metallic);
+
+        float NdotV = max(dot(N_hit, V), 0.0);
+        float VdotH = max(dot(V, H), 0.0); // VdotH 也在 sampleGGXImportance 内部检查过了
+
+        float D = DistributionGGX(N_hit, H, mat.roughness); // D(H)
+        float G = GeometrySmith(N_hit, V, L, mat.roughness); // G(V,L,H)
+        vec3 F = FresnelSchlick(VdotH, F0);                 // F(V,H)
+
+        vec3 specularNumerator = D * G * F;
+        float specularDenominator = 4.0 * NdotV * NdotL + EPSILON;
+        vec3 specularBRDF = specularNumerator / max(specularDenominator, EPSILON);
+
+        vec3 kS = F;
+        vec3 kD = (vec3(1.0) - kS) * (1.0 - mat.metallic);
+        vec3 diffuseBRDF_lambertian = mat.albedo / PI;
+        
+        vec3 totalBRDF = kD * diffuseBRDF_lambertian + specularBRDF;
+
+        // --- 更新通量 (throughput) ---
+        // throughput_new = throughput_old * BRDF * NdotL / PDF_L
+        throughput *= totalBRDF * NdotL / pdf_L;
+
+
+        // --- 俄罗斯轮盘赌 ---
+        if (bounce > 1) {
+            float p_continue = max(throughput.r, max(throughput.g, throughput.b));
+            p_continue = clamp(p_continue, 0.0f, 0.99f); // 限制继续概率，避免除零
+
+            if (rand() > p_continue) { // 测试是否终止
+                 break; 
+            }
+            throughput /= p_continue; // 如果继续，补偿能量
+        }
+        // 简单的低通量硬终止
+        if (dot(throughput, throughput) < EPSILON * EPSILON && bounce > 2) break;
+
+
+        // --- 为下一次反弹准备 ---
+        currentOrigin = hitPos + N_hit * EPSILON; 
+        currentDir = L;                        
+    }
+
+    return radiance;
+}
+
+// === Main Entry ===
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    vec2 resolution = vec2(imageSize(outputImage));
+    
+    // 为每个像素、每帧、每个SPP样本初始化随机种子
+    uint base_seed_frame_pixel = uint(pix.x * 1973 + pix.y * 9277 + frame * 26699); 
+    
+    vec3 totalColor = vec3(0.0);
+    for (int i = 0; i < SPP; ++i) {
+        seed = base_seed_frame_pixel + uint(i * 12347); // 确保SPP内部的种子不同
+        // 可以再混合一下，例如:
+        // seed = (seed ^ (seed >> 16)) * 0x45d9f3b;
+        // seed = (seed ^ (seed >> 16)) * 0x45d9f3b;
+        // seed = seed ^ (seed >> 16);
+
+
+        float r1 = rand(); // 用于抖动
+        float r2 = rand(); // 用于抖动
+        vec2 jitter = vec2(r1, r2); 
+        vec2 uv = (vec2(pix) + jitter) / resolution * 2.0 - 1.0;
+
+        vec4 target = invViewProj * vec4(uv, 0.0, 1.0);
+        vec3 rayDir = normalize(target.xyz / target.w - cameraPos);
+
+        totalColor += traceRay(cameraPos, rayDir);
+    }
+
+    vec3 avgColor = totalColor / float(SPP);
+
+    vec4 prevColor = imageLoad(outputImage, pix);
+    vec3 accumulatedColor;
+    if (frame == 0) {
+        accumulatedColor = avgColor;
+    } else {
+        accumulatedColor = (prevColor.rgb * float(frame) + avgColor) / float(frame + 1);
+    }
+    
+    imageStore(outputImage, pix, vec4(accumulatedColor, 1.0));
+}

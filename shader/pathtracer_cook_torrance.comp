@@ -1,0 +1,344 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16) in;
+
+struct BVHNode {
+    vec3 minBounds;
+    vec3 maxBounds;
+    int leftChild;
+    int rightChild;
+    int triangleIndex; // -1 表示非叶节点
+};
+
+struct Triangle {
+    vec3 v0, v1, v2;
+    vec3 n0, n1, n2; // 顶点法线
+    vec3 normal;     // 三角形法线
+    uint materialID;
+};
+
+struct Material {
+    vec3 albedo;
+    float metallic;
+    float roughness;
+    float ambientOcclusion; // 当前路径追踪器未使用
+    float padding1;         // 确保对齐
+    float emission;         // 自发光强度
+};
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D outputImage;
+
+layout(std140, set = 1, binding = 0) buffer Triangles { Triangle tris[]; };
+layout(std140, set = 1, binding = 1) buffer BVHBuffer { BVHNode bvhNodes[]; };
+
+layout(std140, set = 1, binding = 2) uniform MaterialBlock {
+    Material materials[16]; // 假设最多16种材质
+};
+
+layout(std140, set = 1, binding = 3) uniform CameraData {
+    mat4 invViewProj; // 逆视图投影矩阵
+    vec3 cameraPos;   // 摄像机位置
+    int frame;        // 当前帧编号
+};
+
+#define MAX_BOUNCES 4
+#define SPP 4 // 每像素采样数
+#define PI 3.14159265359
+
+// === 随机函数 ===
+uint seed;
+float rand() {
+    seed ^= seed << 13;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;
+    return float(seed & 0x00FFFFFF) / float(0x01000000);
+}
+
+// === Cook-Torrance BRDF 辅助函数 ===
+
+// NDF (Normal Distribution Function) - GGX/Trowbridge-Reitz
+float DistributionGGX(vec3 N, vec3 H, float roughness) {
+    float a = roughness * roughness; // 在PBR中，通常用alpha = roughness^2
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+
+    float nom   = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return nom / max(denom, 0.000001); // 防止除以零
+}
+
+// G (Geometry Function) - Schlick-GGX 部分
+float GeometrySchlickGGX(float NdotV, float roughness) {
+    // UE4 使用 k = (roughness + 1)^2 / 8  (用于直接光照)
+    // 对于IBL, k = roughness^2 / 2
+    // 路径追踪的每次反弹更像直接光照
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+
+    float nom   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+
+    return nom / max(denom, 0.000001); // 防止除以零
+}
+
+// G (Geometry Function) - Smith 方法
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggxV = GeometrySchlickGGX(NdotV, roughness);
+    float ggxL = GeometrySchlickGGX(NdotL, roughness);
+
+    return ggxV * ggxL;
+}
+
+// F (Fresnel Function) - Schlick 近似
+vec3 FresnelSchlick(float cosTheta, vec3 F0) {
+    return F0 + (vec3(1.0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+
+// === 光线与 AABB 相交测试 ===
+bool intersectAABB(vec3 rayOrigin, vec3 rayDir, vec3 minBounds, vec3 maxBounds, out float tMin, out float tMax) {
+    vec3 invDir = 1.0 / rayDir;
+    vec3 t0s = (minBounds - rayOrigin) * invDir;
+    vec3 t1s = (maxBounds - rayOrigin) * invDir;
+
+    vec3 tMinVec = min(t0s, t1s);
+    vec3 tMaxVec = max(t0s, t1s);
+
+    tMin = max(max(tMinVec.x, tMinVec.y), tMinVec.z);
+    tMax = min(min(tMaxVec.x, tMaxVec.y), tMaxVec.z);
+
+    return tMax >= max(tMin, 0.0);
+}
+
+// === 使用 BVH 进行光线与三角形的加速相交测试 ===
+bool intersectBVH(vec3 rayOrigin, vec3 rayDir, out int hitIndex, out float t, out vec3 hitNormal) {
+    int stack[64];
+    int stackPtr = 0;
+    stack[stackPtr++] = 0; // 从根节点开始
+
+    t = 1e20; // 初始化为一个很大的数
+    hitIndex = -1;
+
+    while (stackPtr > 0) {
+        int nodeIndex = stack[--stackPtr];
+        BVHNode node = bvhNodes[nodeIndex];
+
+        float tAABBMin, tAABBMax;
+        if (!intersectAABB(rayOrigin, rayDir, node.minBounds, node.maxBounds, tAABBMin, tAABBMax) || tAABBMin > t) {
+            continue;
+        }
+
+        if (node.triangleIndex >= 0) {
+            // 叶节点，测试与三角形的相交 (Möller–Trumbore algorithm)
+            Triangle tri = tris[node.triangleIndex];
+            vec3 edge1 = tri.v1 - tri.v0;
+            vec3 edge2 = tri.v2 - tri.v0;
+            vec3 pvec = cross(rayDir, edge2);
+            float det = dot(edge1, pvec);
+
+            // 如果行列式接近于0，光线与三角形平行
+            if (abs(det) < 0.00001) continue;
+
+            float invDet = 1.0 / det;
+            vec3 tvec = rayOrigin - tri.v0;
+            float u = dot(tvec, pvec) * invDet;
+
+            if (u < 0.0 || u > 1.0) continue;
+
+            vec3 qvec = cross(tvec, edge1);
+            float v = dot(rayDir, qvec) * invDet;
+
+            if (v < 0.0 || u + v > 1.0) continue;
+
+            float current_t = dot(edge2, qvec) * invDet;
+            vec3 barycentricCoords = vec3(1.0 - u - v, u, v); // w, u, v
+
+            if (current_t > 0.001 && current_t < t) { // 确保 t > 0 并且是最近的交点
+                t = current_t;
+                hitIndex = node.triangleIndex;
+                // 使用重心坐标插值顶点法线
+                hitNormal = normalize(
+                    tri.n0 * barycentricCoords.x +
+                    tri.n1 * barycentricCoords.y +
+                    tri.n2 * barycentricCoords.z
+                );
+            }
+        } else {
+            // 非叶节点，将子节点压入栈中
+            // 可以根据光线方向优化子节点的访问顺序，但这里简单处理
+            stack[stackPtr++] = node.leftChild;
+            stack[stackPtr++] = node.rightChild;
+        }
+    }
+    return hitIndex != -1;
+}
+
+// === 采样单位半球 (按余弦分布) ===
+// 返回一个在法线N定义的半球内按余弦分布采样的方向
+// PDF = cos(theta) / PI = dot(N, sampled_dir) / PI
+vec3 sampleHemisphereCosineWeighted(vec3 N) {
+    float u1 = rand(); // [0, 1)
+    float u2 = rand(); // [0, 1)
+
+    float r = sqrt(u1);
+    float theta = 2.0 * PI * u2;
+
+    // 创建一个局部坐标系
+    vec3 up = abs(N.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, N)); // 注意这里是 up cross N，保证与N正交
+    vec3 bitangent = cross(N, tangent);
+
+    // 从局部坐标转换到世界坐标
+    return normalize(
+        tangent * (r * cos(theta)) +
+        bitangent * (r * sin(theta)) +
+        N * sqrt(max(0.0, 1.0 - u1)) // sqrt(1 - r^2) = sqrt(1 - u1)
+    );
+}
+
+
+// === 主追踪函数 (Cook-Torrance) ===
+vec3 traceRay(vec3 initialOrigin, vec3 initialDir) {
+    vec3 throughput = vec3(1.0);
+    vec3 radiance = vec3(0.0);
+    vec3 currentOrigin = initialOrigin;
+    vec3 currentDir = initialDir;
+
+    for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
+        int hitIndex;
+        float t;
+        vec3 N_hit; // 击中点的表面法线
+        if (!intersectBVH(currentOrigin, currentDir, hitIndex, t, N_hit)) {
+            // 如果光线没有击中任何物体，可以假设它射向了天空/环境光
+            // 这里简单地中断，不贡献任何光照
+            break;
+        }
+
+        Triangle tri = tris[hitIndex];
+        Material mat = materials[tri.materialID];
+        vec3 hitPos = currentOrigin + currentDir * t;
+
+        // 累积当前表面材质的自发光
+        // 注意：自发光不受BRDF影响，直接贡献给辐射度
+        radiance += throughput * vec3(mat.emission); // emission 是 float, 转为 vec3
+
+        // --- Cook-Torrance BRDF 计算 ---
+        vec3 V = -currentDir; // 观察方向 (从击中点指向光线来源)
+        
+        // 采样下一个光线方向 L (这里使用余弦加权半球采样)
+        vec3 L = sampleHemisphereCosineWeighted(N_hit);
+        float NdotL = max(dot(N_hit, L), 0.0);
+
+        if (NdotL <= 0.0) { // 采样方向在表面之下或平行，停止反弹
+            break;
+        }
+
+        // 计算 F0 (法向入射时的菲涅尔反射率)
+        // 对于非金属，F0 通常是 vec3(0.04)
+        // 对于金属，F0 是其 albedo 颜色
+        vec3 F0 = vec3(0.04);
+        F0 = mix(F0, mat.albedo, mat.metallic);
+
+        // 计算半角向量 H
+        vec3 H = normalize(V + L);
+
+        // Cook-Torrance BRDF 的各项参数
+        float NdotV = max(dot(N_hit, V), 0.0);
+        // float NdotH = max(dot(N_hit, H), 0.0); // DistributionGGX内部会计算
+        float VdotH = max(dot(V, H), 0.0);     // 用于菲涅尔项
+
+        float roughness = mat.roughness; // 使用材质的粗糙度
+        // float alpha = roughness * roughness; // GGX通常使用alpha = roughness^2
+
+        // NDF (法线分布函数)
+        float D = DistributionGGX(N_hit, H, roughness);
+        // G (几何遮蔽函数)
+        float G = GeometrySmith(N_hit, V, L, roughness);
+        // F (菲涅尔函数)
+        vec3 F = FresnelSchlick(VdotH, F0); // 注意：这里用 VdotH (或 LdotH)
+
+        // 计算镜面部分的BRDF
+        vec3 specularNumerator = D * G * F;
+        float specularDenominator = 4.0 * NdotV * NdotL + 0.0001; // 加一个小的epsilon防止除零
+        vec3 specularBRDF = specularNumerator / max(specularDenominator, 0.0001);
+
+        // 计算漫反射部分的BRDF (能量守恒)
+        vec3 kS = F; // 镜面反射贡献的能量比例由菲涅尔项决定
+        vec3 kD = (vec3(1.0) - kS) * (1.0 - mat.metallic); // 漫反射贡献的能量比例，非金属才有漫反射
+        
+        vec3 diffuseBRDF_lambertian = mat.albedo / PI; // Lambertian漫反射项
+
+        // 总的BRDF = 漫反射 + 镜面反射
+        vec3 totalBRDF = kD * diffuseBRDF_lambertian + specularBRDF;
+
+        // 更新通量 (throughput)
+        // throughput_new = throughput_old * BRDF * cos(theta_out) / PDF(ray_out)
+        // 对于余弦加权半球采样, PDF = cos(theta_out) / PI = NdotL / PI
+        // 所以 throughput_new = throughput_old * totalBRDF * NdotL / (NdotL / PI)
+        // 这简化为: throughput_new = throughput_old * totalBRDF * PI
+        throughput *= totalBRDF * PI;
+
+        // (可选) 俄罗斯轮盘赌，用于终止贡献很小的路径，以提高效率
+        if (bounce > 1) { // 在几次反弹后开始
+            float p_continue = max(throughput.r, max(throughput.g, throughput.b));
+            if (rand() < (1.0 - p_continue) || p_continue < 0.01) { // 如果p_continue很小，则有高概率终止
+                 break;
+            }
+            throughput /= p_continue; // 能量补偿
+        }
+         if (dot(throughput, throughput) < 0.0001f && bounce > 2) break; // 另一种简单的低通量终止
+
+
+        // 为下一次反弹准备
+        currentOrigin = hitPos + N_hit * 0.0001; // 沿法线方向偏移一点以避免自相交
+        currentDir = L;                         // 新的光线方向是采样得到的L
+    }
+
+    return radiance;
+}
+
+// === Main Entry ===
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    vec2 resolution = vec2(imageSize(outputImage));
+    // 为每个像素和每帧初始化随机种子，确保SPP内的随机性以及帧间的不同随机性
+    seed = uint(pix.x * uint(resolution.y) + pix.y + uint(frame) * uint(resolution.x * resolution.y) * uint(SPP));
+    uint base_seed = uint(pix.x * 1973 + pix.y * 9277 + frame * 26699); // 使用一些大素数混合
+    vec3 totalColor = vec3(0.0);
+    // 每像素多次采样 (SPP)
+    for (int i = 0; i < SPP; ++i) {
+        // 为每次采样添加抖动 (jitter) 以改善抗锯齿
+        // seed += uint(i); // 确保SPP内部的随机序列不同
+        seed = base_seed + uint(i * 12347); // 确保每次SPP迭代的种子不同且有一定间隔
+        float r1 = rand();
+        float r2 = rand();
+        vec2 jitter = vec2(r1, r2); 
+        vec2 uv = (vec2(pix) + jitter) / resolution * 2.0 - 1.0; // 归一化设备坐标 [-1, 1]
+
+        // 计算初始光线方向
+        vec4 target = invViewProj * vec4(uv, 0.0, 1.0); // 从NDC到世界空间近平面点
+        vec3 rayDir = normalize(target.xyz / target.w - cameraPos); // 从相机位置到该点的方向
+
+        totalColor += traceRay(cameraPos, rayDir);
+    }
+
+    vec3 avgColor = totalColor / float(SPP); // 对SPP次采样的结果取平均
+
+    // 帧间累积
+    vec4 prevColor = imageLoad(outputImage, pix);
+
+    // 确保第一帧正确初始化，后续帧进行累积平均
+    vec3 accumulatedColor;
+    if (frame == 0) {
+        accumulatedColor = avgColor;
+    } else {
+        // (旧颜色 * 旧帧数 + 新颜色) / 新帧数
+        accumulatedColor = (prevColor.rgb * float(frame) + avgColor) / float(frame + 1);
+    }
+    
+    imageStore(outputImage, pix, vec4(accumulatedColor, 1.0));
+}

@@ -1,0 +1,288 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16) in;
+
+struct BVHNode {
+    vec3 minBounds;
+    vec3 maxBounds;
+    int leftChild;
+    int rightChild;
+    int triangleIndex; // -1 表示非叶节点
+};
+
+struct Triangle {
+    vec3 v0, v1, v2;
+    vec3 n0, n1, n2; // 顶点法线
+    vec3 normal;     
+    uint materialID;
+};
+
+struct Material {
+    vec3 albedo;
+    float metallic;
+    float roughness;
+    float ambientOcclusion;
+    float padding1;
+    float emission;
+};
+
+layout(set = 0, binding = 0, rgba32f) uniform image2D outputImage;
+layout(std140, set = 1, binding = 0) buffer Triangles { Triangle tris[]; };
+layout(std140, set = 1, binding = 1) buffer BVHBuffer { BVHNode bvhNodes[]; };
+layout(std140, set = 1, binding = 2) uniform MaterialBlock { Material materials[16]; };
+layout(std140, set = 1, binding = 3) uniform CameraData {
+    mat4 invViewProj;
+    vec3 cameraPos;
+    int frame;
+};
+
+
+#define MAX_BOUNCES 4
+#define SPP 4
+#define PI 3.14159265359
+#define BRDF_MATH_EPSILON 0.000001f // Epsilon for internal BRDF calculations (D, G)
+#define PDF_VALIDITY_EPSILON 0.0001f // Epsilon for checking PDF validity and in MIS denominator
+#define RAY_OFFSET_EPSILON 0.0001f   // Epsilon for ray offsetting
+
+// === 随机函数 ===
+uint seed;
+float rand() {
+    seed ^= seed << 13;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;
+    return float(seed & 0x00FFFFFF) / float(0x01000000);
+}
+
+// === Cook-Torrance BRDF 辅助函数 (use BRDF_MATH_EPSILON) ===
+float DistributionGGX(vec3 N, vec3 H, float roughness) {
+    float a = roughness * roughness;
+    a = max(a, BRDF_MATH_EPSILON * BRDF_MATH_EPSILON);
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+    float nom   = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+    return nom / max(denom, BRDF_MATH_EPSILON);
+}
+
+float GeometrySchlickGGX(float NdotV, float roughness) {
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+    float nom   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+    return nom / max(denom, BRDF_MATH_EPSILON);
+}
+
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggxV = GeometrySchlickGGX(NdotV, roughness);
+    float ggxL = GeometrySchlickGGX(NdotL, roughness);
+    return ggxV * ggxL;
+}
+
+vec3 FresnelSchlick(float cosTheta, vec3 F0) {
+    return F0 + (vec3(1.0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// === 坐标系构建 ===
+void createCoordinateSystem(vec3 N, out vec3 Nt, out vec3 Nb) {
+    if (abs(N.x) > abs(N.y)) Nt = normalize(vec3(N.z, 0.0, -N.x));
+    else Nt = normalize(vec3(0.0, -N.z, N.y));
+    Nb = cross(N, Nt);
+}
+
+vec3 tangentToWorld(vec3 v_tangent, vec3 N_world, vec3 Nt_world, vec3 Nb_world) {
+    return Nt_world * v_tangent.x + Nb_world * v_tangent.y + N_world * v_tangent.z;
+}
+
+// === GGX 重要性采样结构体和函数 (use PDF_VALIDITY_EPSILON) ===
+struct GGXSampleInfo {
+    vec3 L; vec3 H; float pdf_L; bool isValid;
+};
+
+GGXSampleInfo sampleGGXImportance(vec3 V, vec3 N, float roughness, float r1, float r2) {
+    GGXSampleInfo ggxSmpResult; ggxSmpResult.isValid = false;
+    float alpha = roughness * roughness; alpha = max(alpha, BRDF_MATH_EPSILON * BRDF_MATH_EPSILON);
+    float phi_h = 2.0 * PI * r1;
+    float cos_theta_h_sq = (1.0 - r2) / (1.0 + (alpha * alpha - 1.0) * r2);
+    float cos_theta_h = sqrt(max(0.0, cos_theta_h_sq));
+    float sin_theta_h = sqrt(max(0.0, 1.0 - cos_theta_h_sq));
+    vec3 H_tangent = vec3(sin_theta_h * cos(phi_h), sin_theta_h * sin(phi_h), cos_theta_h);
+    vec3 Nt, Nb; createCoordinateSystem(N, Nt, Nb);
+    ggxSmpResult.H = normalize(tangentToWorld(H_tangent, N, Nt, Nb));
+    ggxSmpResult.L = reflect(-V, ggxSmpResult.H);
+    float NdotH = max(dot(N, ggxSmpResult.H), 0.0);
+    float VdotH = max(dot(V, ggxSmpResult.H), 0.0);
+    if (VdotH <= PDF_VALIDITY_EPSILON || NdotH <= PDF_VALIDITY_EPSILON || dot(N, ggxSmpResult.L) <= PDF_VALIDITY_EPSILON) {
+        return ggxSmpResult;
+    }
+    float D_val = DistributionGGX(N, ggxSmpResult.H, roughness);
+    ggxSmpResult.pdf_L = (D_val * NdotH) / max(4.0 * VdotH, PDF_VALIDITY_EPSILON);
+    if (ggxSmpResult.pdf_L <= PDF_VALIDITY_EPSILON) return ggxSmpResult;
+    ggxSmpResult.isValid = true;
+    return ggxSmpResult;
+}
+
+// === 余弦加权半球采样 ===
+vec3 sampleHemisphereCosineWeighted(vec3 N, float r1, float r2) {
+    float r = sqrt(r1); float theta = 2.0 * PI * r2;
+    vec3 up = abs(N.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, N)); vec3 bitangent = cross(N, tangent);
+    return normalize(tangent * (r * cos(theta)) + bitangent * (r * sin(theta)) + N * sqrt(max(0.0, 1.0 - r1)));
+}
+
+// === PDF 计算函数 ===
+// PDF of L if sampled by GGX importance sampling
+float pdfGGX(vec3 L, vec3 V, vec3 N, float roughness) {
+    if (dot(N, L) <= PDF_VALIDITY_EPSILON) return 0.0;
+    vec3 H = normalize(V + L);
+    float NdotH = max(dot(N, H), 0.0);
+    float VdotH = max(dot(V, H), 0.0);
+    if (VdotH <= PDF_VALIDITY_EPSILON) return 0.0;
+    float D_val = DistributionGGX(N, H, roughness);
+    return (D_val * NdotH) / max(4.0 * VdotH, PDF_VALIDITY_EPSILON);
+}
+
+// PDF of L if sampled by cosine-weighted hemisphere sampling
+float pdfCosine(vec3 L, vec3 N) {
+    float NdotL = max(dot(N, L), 0.0);
+    if (NdotL <= PDF_VALIDITY_EPSILON) return 0.0;
+    return NdotL / PI;
+}
+
+// === BVH Intersection (use RAY_OFFSET_EPSILON for t_min in hit check) ===
+bool intersectAABB(vec3 rayOrigin, vec3 rayDir, vec3 minBounds, vec3 maxBounds, out float tMin, out float tMax) {
+    vec3 invDir = 1.0 / rayDir; vec3 t0s = (minBounds - rayOrigin) * invDir; vec3 t1s = (maxBounds - rayOrigin) * invDir;
+    vec3 tMinVec = min(t0s, t1s); vec3 tMaxVec = max(t0s, t1s);
+    tMin = max(max(tMinVec.x, tMinVec.y), tMinVec.z); tMax = min(min(tMaxVec.x, tMaxVec.y), tMaxVec.z);
+    return tMax >= max(tMin, 0.0);
+}
+bool intersectBVH(vec3 rayOrigin, vec3 rayDir, out int hitIndex, out float t, out vec3 hitNormal) {
+    int stack[64]; int stackPtr = 0; stack[stackPtr++] = 0; t = 1e20; hitIndex = -1;
+    while (stackPtr > 0) {
+        int nodeIndex = stack[--stackPtr]; BVHNode node = bvhNodes[nodeIndex]; float tAABBMin, tAABBMax;
+        if (!intersectAABB(rayOrigin, rayDir, node.minBounds, node.maxBounds, tAABBMin, tAABBMax) || tAABBMin > t) continue;
+        if (node.triangleIndex >= 0) {
+            Triangle tri = tris[node.triangleIndex]; vec3 edge1 = tri.v1 - tri.v0; vec3 edge2 = tri.v2 - tri.v0;
+            vec3 pvec = cross(rayDir, edge2); float det = dot(edge1, pvec);
+            if (abs(det) < BRDF_MATH_EPSILON) continue; // Use smaller epsilon for geometry test
+            float invDet = 1.0 / det; vec3 tvec = rayOrigin - tri.v0; float u = dot(tvec, pvec) * invDet;
+            if (u < 0.0 || u > 1.0) continue;
+            vec3 qvec = cross(tvec, edge1); float v_coord = dot(rayDir, qvec) * invDet; // Renamed v to v_coord
+            if (v_coord < 0.0 || u + v_coord > 1.0) continue;
+            float current_t = dot(edge2, qvec) * invDet;
+            if (current_t > RAY_OFFSET_EPSILON && current_t < t) {
+                t = current_t; hitIndex = node.triangleIndex; vec3 bary = vec3(1.0 - u - v_coord, u, v_coord);
+                hitNormal = normalize(tri.n0 * bary.x + tri.n1 * bary.y + tri.n2 * bary.z);
+            }
+        } else { stack[stackPtr++] = node.leftChild; stack[stackPtr++] = node.rightChild; }
+    }
+    return hitIndex != -1;
+}
+
+
+// === 主追踪函数 (Cook-Torrance with MIS) ===
+vec3 traceRay(vec3 initialOrigin, vec3 initialDir) {
+    vec3 throughput = vec3(1.0);
+    vec3 radiance = vec3(0.0);
+    vec3 currentOrigin = initialOrigin;
+    vec3 currentDir = initialDir;
+
+    for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
+        int hitIndex; float t; vec3 N_hit;
+        if (!intersectBVH(currentOrigin, currentDir, hitIndex, t, N_hit)) break;
+
+        Triangle tri = tris[hitIndex]; Material mat = materials[tri.materialID];
+        vec3 hitPos = currentOrigin + currentDir * t;
+        radiance += throughput * vec3(mat.emission);
+        vec3 V = -currentDir;
+
+        // --- MIS: Decide sampling strategy and calculate PDFs ---
+        vec3 L_sampled;
+        float pdf_ggx_val;
+        float pdf_cosine_val;
+
+        // Determine probability of choosing specular sampling
+        vec3 F0 = vec3(0.04); F0 = mix(F0, mat.albedo, mat.metallic);
+        float f0_avg = (F0.x + F0.y + F0.z) / 3.0;
+        float prob_sample_specular = mat.metallic + (1.0 - mat.metallic) * f0_avg;
+        prob_sample_specular = clamp(prob_sample_specular, 0.1, 0.9); // Ensure both strategies get a chance
+
+        float r_strat = rand();
+        if (r_strat < prob_sample_specular) { // Sample GGX specular
+            GGXSampleInfo ggxSample = sampleGGXImportance(V, N_hit, mat.roughness, rand(), rand());
+            if (!ggxSample.isValid) break;
+            L_sampled = ggxSample.L;
+            pdf_ggx_val = ggxSample.pdf_L;
+            pdf_cosine_val = pdfCosine(L_sampled, N_hit);
+        } else { // Sample cosine-weighted diffuse
+            L_sampled = sampleHemisphereCosineWeighted(N_hit, rand(), rand());
+            pdf_cosine_val = pdfCosine(L_sampled, N_hit);
+            if (pdf_cosine_val <= PDF_VALIDITY_EPSILON) break; // Cosine PDF can be zero if L is bad
+            pdf_ggx_val = pdfGGX(L_sampled, V, N_hit, mat.roughness);
+        }
+
+        float NdotL = max(dot(N_hit, L_sampled), 0.0);
+        if (NdotL <= PDF_VALIDITY_EPSILON) break;
+
+        // --- Calculate BRDF for the sampled direction L_sampled ---
+        vec3 H = normalize(V + L_sampled);
+        float NdotV = max(dot(N_hit, V), 0.0);
+        float VdotH = max(dot(V, H), 0.0);
+
+        float D = DistributionGGX(N_hit, H, mat.roughness);
+        float G = GeometrySmith(N_hit, V, L_sampled, mat.roughness);
+        vec3 F = FresnelSchlick(VdotH, F0);
+
+        vec3 specularBRDF = (D * G * F) / max(4.0 * NdotV * NdotL, BRDF_MATH_EPSILON);
+        vec3 kS = F;
+        vec3 kD = (vec3(1.0) - kS) * (1.0 - mat.metallic);
+        vec3 diffuseBRDF_lambertian = mat.albedo / PI;
+        vec3 totalBRDF = kD * diffuseBRDF_lambertian + specularBRDF;
+
+        // --- MIS: Update throughput ---
+        float combined_pdf_denominator = (prob_sample_specular * pdf_ggx_val) + ((1.0 - prob_sample_specular) * pdf_cosine_val);
+        if (combined_pdf_denominator <= PDF_VALIDITY_EPSILON) break;
+        
+        throughput *= totalBRDF * NdotL / combined_pdf_denominator;
+
+        // --- 俄罗斯轮盘赌 ---
+        if (bounce > 1) {
+            float p_continue = max(throughput.r, max(throughput.g, throughput.b));
+            p_continue = clamp(p_continue, 0.0f, 0.95f); // Slightly higher clamp for RR
+            if (rand() > p_continue || p_continue < 0.01) break;
+            throughput /= p_continue;
+        }
+        if (dot(throughput, throughput) < BRDF_MATH_EPSILON * BRDF_MATH_EPSILON && bounce > 2) break;
+
+        currentOrigin = hitPos + N_hit * RAY_OFFSET_EPSILON;
+        currentDir = L_sampled;
+    }
+    return radiance;
+}
+
+// === Main Entry (ensure robust seed generation) ===
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    vec2 resolution = vec2(imageSize(outputImage));
+    uint base_seed_pixel_frame = uint(pix.x * 1973 + pix.y * 9277 + frame * 26699);
+    vec3 totalColor = vec3(0.0);
+    for (int i = 0; i < SPP; ++i) {
+        seed = base_seed_pixel_frame + uint(i * 12347); // Per-sample seed
+        // Optional: further mix seed
+        // seed = (seed ^ (seed >> 16)) * 0x45d9f3b;
+        // seed = (seed ^ (seed >> 16)) * 0x45d9f3b;
+        // seed = seed ^ (seed >> 16);
+
+        float r_jitter1 = rand(); float r_jitter2 = rand();
+        vec2 uv = (vec2(pix) + vec2(r_jitter1, r_jitter2)) / resolution * 2.0 - 1.0;
+        vec4 target = invViewProj * vec4(uv, 0.0, 1.0);
+        vec3 rayDir = normalize(target.xyz / target.w - cameraPos);
+        totalColor += traceRay(cameraPos, rayDir);
+    }
+    vec3 avgColor = totalColor / float(SPP);
+    vec4 prevColor = imageLoad(outputImage, pix);
+    vec3 accumulatedColor = (frame == 0) ? avgColor : (prevColor.rgb * float(frame) + avgColor) / float(frame + 1);
+    imageStore(outputImage, pix, vec4(accumulatedColor, 1.0));
+}

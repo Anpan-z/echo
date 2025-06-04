@@ -173,7 +173,7 @@ void VertexResourceManager::loadModel(const std::string& modelPath, const std::s
         shapeIndex += 1;
         float emission = 0.0f;
         if (shape.name == "light"){
-            emission = 2.0f; // 如果是光源，设置自发光强度
+            emission = 20.0f; // 如果是光源，设置自发光强度
         }
         materialUniformBufferObjects.push_back(std::make_shared<MaterialUniformBufferObject>(vertices.back().color, emission)); // 添加材质统一缓冲区对象
         shapeNames.push_back(shape.name); // 存储形状名称
