@@ -16,6 +16,7 @@ struct Material {
     float roughness;
     float ambientOcclusion;
     float padding1; // pad to 16 bytes
+    float emission;
 };
 
 layout(binding = 2) uniform MaterialBlock {

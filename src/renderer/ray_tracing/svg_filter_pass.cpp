@@ -103,7 +103,8 @@ void SVGFilterPass::createDescriptorSetLayout()
 void SVGFilterPass::createPipeline()
 {
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
-    std::string compute_shader_code_path = "../shader/svg_filter.comp";
+    std::string compute_shader_code_path = "../shader/sigma_clip_denoise.comp";
+    // std::string compute_shader_code_path = "../shader/svg_filter.comp";
 
     std::string cs = vulkanUtils.readFileToString(compute_shader_code_path);
     shaderc::Compiler compiler;
