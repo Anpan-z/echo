@@ -16,6 +16,10 @@ struct Triangle {
     uint materialID;
 };
 
+struct EmissiveTriangle {
+    uint emissiveTriangleIndex;
+};
+
 struct Material {
     vec3 albedo;
     float metallic;
@@ -40,10 +44,9 @@ layout(std140, set = 1, binding = 3) uniform CameraData {
     int frame;        // 当前帧编号
 };
 
-// layout(std140, set = 1, binding = 4) uniform SceneInfo {
-//     uint actual_scene_triangle_count;
-// };
-
+layout(std140, set = 1, binding = 4) buffer EmissiveTriangles {
+    EmissiveTriangle emissiveIndex[];
+};
 
 #define MAX_BOUNCES 4
 #define SPP 4
@@ -149,9 +152,6 @@ vec3 traceRayLambertianNEE(vec3 initialOrigin, vec3 initialDir) {
     vec3 currentRayOrigin = initialOrigin;
     vec3 currentRayDir = initialDir;
 
-    // 场景中实际的三角形数量
-    uint scene_triangle_count = 1112;
-
     for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
         int hitSurfaceIdx;
         float t_hit;
@@ -166,30 +166,14 @@ vec3 traceRayLambertianNEE(vec3 initialOrigin, vec3 initialDir) {
 
         // --- 1. 直接光源采样 (Next Event Estimation) ---
         // 第一步：统计场景中所有光源的数量
-        uint num_actual_lights = 0;
-        for (uint i = 0; i < scene_triangle_count; ++i) {
-            if (materials[tris[i].materialID].emission > 0.0) {
-                num_actual_lights++;
-            }
-        }
+        uint num_actual_lights = emissiveIndex.length();
 
         if (num_actual_lights > 0) {
             // 第二步：随机选择一个光源进行采样
             // 生成一个 [0, num_actual_lights - 1] 范围内的随机序号
-            int target_light_ordinal = int(rand() * float(num_actual_lights));
-            if (target_light_ordinal >= int(num_actual_lights)) target_light_ordinal = int(num_actual_lights) - 1; // 确保安全
-
-            int light_tri_idx = -1;
-            int current_light_emitter_count = 0;
-            for (uint l_idx = 0; l_idx < scene_triangle_count; ++l_idx) {
-                if (materials[tris[l_idx].materialID].emission > 0.0) {
-                    if (current_light_emitter_count == target_light_ordinal) {
-                        light_tri_idx = int(l_idx);
-                        break; // 找到了我们选中的光源
-                    }
-                    current_light_emitter_count++;
-                }
-            }
+            uint random_emissive_array_idx = uint(rand() * float(num_actual_lights));
+            random_emissive_array_idx = min(random_emissive_array_idx, num_actual_lights - 1); // Ensure index is within bounds
+            int light_tri_idx = int(emissiveIndex[random_emissive_array_idx].emissiveTriangleIndex);
 
             if (light_tri_idx != -1) { // 应该总能找到，因为 num_actual_lights > 0
                 Triangle light_geom = tris[light_tri_idx];

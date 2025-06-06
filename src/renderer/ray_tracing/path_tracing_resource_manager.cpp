@@ -33,6 +33,9 @@ void PathTracingResourceManager::cleanup() {
     vkDestroyBuffer(device, triangleStorageBuffer, nullptr);
     vkFreeMemory(device, triangleStorageBufferMemory, nullptr);
 
+    vkDestroyBuffer(device, emissiveTrianglesBuffer, nullptr);
+    vkFreeMemory(device, emissiveTrianglesBufferMemory, nullptr);
+
     vkDestroyBuffer(device, BVHStorageBuffer, nullptr);
     vkFreeMemory(device, BVHStorageBufferMemory, nullptr);
     
@@ -105,6 +108,11 @@ void PathTracingResourceManager::buildTrianglesFromMesh(const std::vector<Vertex
         tri.materialID = v0.materialID; // 默认 v0 的材质 ID，一般 OBJ 同面材质一致
 
         triangles.push_back(tri);
+        if (vertexResourceManager->getShapeNames()[tri.materialID] == "light") {
+            EmissiveTriangle emissiveTri;
+            emissiveTri.triangleIndex = i;
+            emissiveTriangles.push_back(emissiveTri);
+        }
     }
 }
 
@@ -274,11 +282,17 @@ void PathTracingResourceManager::createTriangleStorageBuffer(){
     void* data;
     vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
     memcpy(data, triangles.data(), (size_t)bufferSize);
-    vkUnmapMemory(device, stagingBufferMemory);
 
     vulkanUtils.createBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, triangleStorageBuffer, triangleStorageBufferMemory);
-
     vulkanUtils.copyBuffer(device, commandManager->getCommandPool(), graphicsQueue, stagingBuffer, triangleStorageBuffer, bufferSize);
+
+    memset(data, 0, bufferSize);
+    bufferSize = sizeof(emissiveTriangles[0]) * emissiveTriangles.size();
+    memcpy(data, emissiveTriangles.data(), (size_t)bufferSize);
+    vkUnmapMemory(device, stagingBufferMemory);
+
+    vulkanUtils.createBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, emissiveTrianglesBuffer, emissiveTrianglesBufferMemory);
+    vulkanUtils.copyBuffer(device, commandManager->getCommandPool(), graphicsQueue, stagingBuffer, emissiveTrianglesBuffer, bufferSize);
 
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingBufferMemory, nullptr);

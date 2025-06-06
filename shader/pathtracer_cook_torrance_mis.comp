@@ -16,6 +16,10 @@ struct Triangle {
     uint materialID;
 };
 
+struct EmissiveTriangle {
+    uint emissiveTriangleIndex;
+};
+
 struct Material {
     vec3 albedo;
     float metallic;
@@ -34,12 +38,9 @@ layout(std140, set = 1, binding = 3) uniform CameraData {
     vec3 cameraPos;
     int frame;
 };
-// 假设你有一个方式传递场景中实际的三角形数量
-// layout(std140, set = 1, binding = 4) uniform SceneInfo {
-//     uint actual_scene_triangle_count;
-// };
-uint scene_triangle_count = 111; // 保持你之前的值，但最好通过uniform传入
-
+layout(std140, set = 1, binding = 4) buffer EmissiveTriangles {
+    EmissiveTriangle emissiveIndex[];
+};
 
 #define MAX_BOUNCES 4
 #define SPP 1
@@ -275,10 +276,7 @@ vec3 traceRay(vec3 initialOrigin, vec3 initialDir) {
 
                 // 2. Calculate PDF of NEE sampling this specific light hit point (pdf_nee_area)
                 // This requires knowing how many lights are in the scene for the selection PDF
-                uint num_actual_lights_for_mis = 0;
-                for (uint i = 0; i < scene_triangle_count; ++i) {
-                    if (materials[tris[i].materialID].emission > 0.0) num_actual_lights_for_mis++;
-                }
+                uint num_actual_lights_for_mis = emissiveIndex.length(); // Use emissiveIndex length for actual light count
 
                 float pdf_nee_area = 0.0;
                 if (num_actual_lights_for_mis > 0) {
@@ -305,25 +303,14 @@ vec3 traceRay(vec3 initialOrigin, vec3 initialDir) {
 
 
         // --- 1. Next Event Estimation (NEE) ---
-        uint num_actual_lights = 0; // Recalculate for NEE, could be different if scene changes dynamically
-        for (uint i = 0; i < scene_triangle_count; ++i) {
-            if (materials[tris[i].materialID].emission > 0.0) num_actual_lights++;
-        }
+        uint num_actual_lights = emissiveIndex.length(); // Recalculate for NEE, could be different if scene changes dynamically
 
         if (num_actual_lights > 0) { // No surface_mat.emission check here, NEE is tried for all non-emissive surfaces
-            int target_light_ordinal = int(rand() * float(num_actual_lights));
-            if (target_light_ordinal >= int(num_actual_lights)) target_light_ordinal = int(num_actual_lights) - 1;
 
-            int light_tri_idx = -1;
-            int current_light_emitter_count = 0;
-            for (uint l_idx = 0; l_idx < scene_triangle_count; ++l_idx) {
-                if (materials[tris[l_idx].materialID].emission > 0.0) {
-                    if (current_light_emitter_count == target_light_ordinal) {
-                        light_tri_idx = int(l_idx); break;
-                    }
-                    current_light_emitter_count++;
-                }
-            }
+            uint random_emissive_array_idx = uint(rand() * float(num_actual_lights));
+            random_emissive_array_idx = min(random_emissive_array_idx, num_actual_lights - 1); // Ensure index is within bounds
+            int light_tri_idx = int(emissiveIndex[random_emissive_array_idx].emissiveTriangleIndex);
+
 
             if (light_tri_idx != -1) {
                 Triangle light_geom = tris[light_tri_idx]; Material light_mat = materials[light_geom.materialID];

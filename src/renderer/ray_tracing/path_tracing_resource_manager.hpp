@@ -14,6 +14,10 @@ struct Triangle {
     alignas(4) uint32_t materialID; // 三角形的材质 ID
 };
 
+struct EmissiveTriangle {
+    alignas(16) uint32_t triangleIndex; // 三角形索引
+};
+
 struct CameraData {
     glm::mat4 invViewProj; // 逆投影矩阵
     glm::vec3 cameraPos;   // 摄像机位置
@@ -55,6 +59,8 @@ public:
 
     VkBuffer getTriangleStorageBuffer() const { return triangleStorageBuffer; }
 
+    VkBuffer getEmissiveTrianglesBuffer() const { return emissiveTrianglesBuffer; }
+
     VkBuffer getBVHStorageBuffer() const { return BVHStorageBuffer; }
 
     VkExtent2D getOutputExtent() const { return outPutExtent; }
@@ -79,11 +85,15 @@ private:
     VertexResourceManager* vertexResourceManager = nullptr;
 
     std::vector<Triangle> triangles;
+    std::vector<EmissiveTriangle> emissiveTriangles;
     std::vector<BVHNode> bvhNodes;
     std::vector<VkBuffer>* materialUniformBuffers;
 
     VkBuffer triangleStorageBuffer;
     VkDeviceMemory triangleStorageBufferMemory;
+
+    VkBuffer emissiveTrianglesBuffer;
+    VkDeviceMemory emissiveTrianglesBufferMemory;
 
     VkBuffer BVHStorageBuffer;
     VkDeviceMemory BVHStorageBufferMemory;

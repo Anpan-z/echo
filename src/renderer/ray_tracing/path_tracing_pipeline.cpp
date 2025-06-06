@@ -317,8 +317,15 @@ void PathTracingPipeline::createDescriptorSetLayout() {
     cameraDataBinding.descriptorCount = 1;
     cameraDataBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     cameraDataBinding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutBinding emissiveTrianglesBinding{};
+    emissiveTrianglesBinding.binding = 4;
+    emissiveTrianglesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    emissiveTrianglesBinding.descriptorCount = 1;
+    emissiveTrianglesBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    emissiveTrianglesBinding.pImmutableSamplers = nullptr;
     
-    std::array<VkDescriptorSetLayoutBinding, 4> bindings = {triangleBinding, bvhBufferBinding, materialBinding, cameraDataBinding};   
+    std::array<VkDescriptorSetLayoutBinding, 5> bindings = {triangleBinding, bvhBufferBinding, materialBinding, cameraDataBinding, emissiveTrianglesBinding};   
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -335,7 +342,7 @@ void PathTracingPipeline::createDescriptorPool() {
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     // VkDescriptorPoolSize poolSize{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[0].descriptorCount = 2 * static_cast<uint32_t>(frameCount);
+    poolSizes[0].descriptorCount = 3 * static_cast<uint32_t>(frameCount);
 
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[1].descriptorCount = 2 * static_cast<uint32_t>(frameCount);
@@ -419,7 +426,12 @@ void PathTracingPipeline::createDescriptorSets() {
         VkDescriptorBufferInfo cameraDataBufferInfo{};
         cameraDataBufferInfo.buffer = pathTracingResourceManager->getCameraDataBuffer()[i];
         cameraDataBufferInfo.offset = 0;
-        cameraDataBufferInfo.range = sizeof(CameraData);        
+        cameraDataBufferInfo.range = sizeof(CameraData);
+
+        VkDescriptorBufferInfo emissiveTrianglesBufferInfo{};
+        emissiveTrianglesBufferInfo.buffer = pathTracingResourceManager->getEmissiveTrianglesBuffer();
+        emissiveTrianglesBufferInfo.offset = 0;
+        emissiveTrianglesBufferInfo.range = VK_WHOLE_SIZE; // 假设整个缓冲区都需要
     
         VkWriteDescriptorSet trianglesWrite{};
         trianglesWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -447,8 +459,6 @@ void PathTracingPipeline::createDescriptorSets() {
         materialsWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         materialsWrite.descriptorCount = 1;
         materialsWrite.pBufferInfo = &materialBufferInfo;
-    
-
 
         VkWriteDescriptorSet cameraDataWrite{};
         cameraDataWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -457,9 +467,18 @@ void PathTracingPipeline::createDescriptorSets() {
         cameraDataWrite.dstArrayElement = 0;
         cameraDataWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         cameraDataWrite.descriptorCount = 1;
-        cameraDataWrite.pBufferInfo = &cameraDataBufferInfo;        
-    
-        std::vector<VkWriteDescriptorSet> descriptorWrites = {trianglesWrite, bvhBufferWrite, materialsWrite, cameraDataWrite};
+        cameraDataWrite.pBufferInfo = &cameraDataBufferInfo;
+
+        VkWriteDescriptorSet emissiveTrianglesWrite{};
+        emissiveTrianglesWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        emissiveTrianglesWrite.dstSet = frameDescriptorSets[i];
+        emissiveTrianglesWrite.dstBinding = 4; // Emissive Triangles 绑定点
+        emissiveTrianglesWrite.dstArrayElement = 0;
+        emissiveTrianglesWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        emissiveTrianglesWrite.descriptorCount = 1;
+        emissiveTrianglesWrite.pBufferInfo = &emissiveTrianglesBufferInfo;
+
+        std::vector<VkWriteDescriptorSet> descriptorWrites = {trianglesWrite, bvhBufferWrite, materialsWrite, cameraDataWrite, emissiveTrianglesWrite};
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 }
