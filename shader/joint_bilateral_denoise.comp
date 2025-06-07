@@ -1,0 +1,91 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// 输入: 路径追踪的颜色缓冲 (通常是HDR)
+layout(set = 0, binding = 0) uniform sampler2D pathTracedColorBuffer;
+// 输入: G-Buffer 世界空间法线 (假定已归一化, [-1, 1] 范围)
+layout(set = 0, binding = 1) uniform sampler2D gbufferNormalBuffer;
+// 输入: G-Buffer 线性深度 (例如，视点空间Z值或世界空间距离)
+layout(set = 0, binding = 2) uniform sampler2D gbufferDepthBuffer;
+
+// 输出: 降噪后的图像
+layout(set = 0, binding = 3, rgba32f) uniform image2D denoisedOutputImage;
+
+// 降噪核参数
+const int JOINT_FILTER_SIZE = 3;    // 3x3核
+const float JOINT_FILTER_DEPTH_SIGMA = 0.01;    // 需要根据实际场景调整
+const float JOINT_FILTER_NORMAL_SIGMA = 8.0;    // 法线夹角权重
+const float JOINT_FILTER_COLOR_SIGMA = 0.1;
+
+void main() {
+    ivec2 imgSize = imageSize(denoisedOutputImage);
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+
+    if (gid.x >= imgSize.x || gid.y >= imgSize.y) return;
+
+    int halfSize = (JOINT_FILTER_SIZE - 1) / 2;
+    float fixNorm = float(JOINT_FILTER_SIZE * JOINT_FILTER_SIZE);
+
+    // 1. 离群点剔除：计算邻域均值、方差、截断
+    vec3 sumColor = vec3(0.0);
+    for (int dy = -halfSize; dy <= halfSize; ++dy) {
+        for (int dx = -halfSize; dx <= halfSize; ++dx) {
+            ivec2 p = clamp(gid + ivec2(dx, dy), ivec2(0), imgSize - 1);
+            sumColor += texelFetch(pathTracedColorBuffer, p, 0).rgb;
+        }
+    }
+    vec3 meanColor = sumColor / fixNorm;
+
+    vec3 varColor = vec3(0.0);
+    for (int dy = -halfSize; dy <= halfSize; ++dy) {
+        for (int dx = -halfSize; dx <= halfSize; ++dx) {
+            ivec2 p = clamp(gid + ivec2(dx, dy), ivec2(0), imgSize - 1);
+            vec3 d = texelFetch(pathTracedColorBuffer, p, 0).rgb - meanColor;
+            varColor += d * d;
+        }
+    }
+    varColor /= fixNorm;
+    vec3 sigmaColor = sqrt(varColor);
+
+    vec3 centerColor = texelFetch(pathTracedColorBuffer, gid, 0).rgb;
+    // 颜色离群点剔除
+    vec3 filteredColor = clamp(centerColor, meanColor - sigmaColor, meanColor + sigmaColor);
+
+    // 2. 联合双边滤波
+    vec3 sum = vec3(0.0);
+    float weightSum = 0.0;
+    vec3 centerNormal = texelFetch(gbufferNormalBuffer, gid, 0).xyz;
+    float centerDepth = texelFetch(gbufferDepthBuffer, gid, 0).r;
+
+    for (int dy = -halfSize; dy <= halfSize; ++dy) {
+        for (int dx = -halfSize; dx <= halfSize; ++dx) {
+            ivec2 p = clamp(gid + ivec2(dx, dy), ivec2(0), imgSize - 1);
+
+            // 颜色距离
+            vec3 neiColor = clamp(texelFetch(pathTracedColorBuffer, p, 0).rgb, meanColor - sigmaColor, meanColor + sigmaColor);
+            float colorDist = length(filteredColor - neiColor);
+
+            // 深度距离
+            float neiDepth = texelFetch(gbufferDepthBuffer, p, 0).r;
+            float depthDist = abs(centerDepth - neiDepth);
+
+            // 法线夹角
+            vec3 neiNormal = texelFetch(gbufferNormalBuffer, p, 0).xyz;
+            float norDot = max(0.0, dot(centerNormal, neiNormal));
+
+            // 联合权重
+            float wDepth = exp(-depthDist / (JOINT_FILTER_DEPTH_SIGMA + 1e-5));
+            float wNormal = pow(norDot, JOINT_FILTER_NORMAL_SIGMA);
+            float wColor = exp(-colorDist / (JOINT_FILTER_COLOR_SIGMA + 1e-5));
+
+            float w = wDepth + wNormal / fixNorm + wColor / fixNorm;
+
+            sum += w * neiColor;
+            weightSum += w;
+        }
+    }
+
+    vec3 finalColor = sum / max(weightSum, 1e-7);
+
+    imageStore(denoisedOutputImage, gid, vec4(finalColor, 1.0));
+}
