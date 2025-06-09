@@ -30,6 +30,7 @@ struct Material {
 };
 
 layout(set = 0, binding = 0, rgba32f) uniform image2D outputImage;
+layout(set = 0, binding = 1, rgba32f) uniform image2D accumulationImages;
 layout(std140, set = 1, binding = 0) buffer Triangles { Triangle tris[]; };
 layout(std140, set = 1, binding = 1) buffer BVHBuffer { BVHNode bvhNodes[]; };
 layout(std140, set = 1, binding = 2) uniform MaterialBlock { Material materials[16]; };
@@ -50,6 +51,8 @@ layout(std140, set = 1, binding = 4) buffer EmissiveTriangles {
 #define RAY_OFFSET_EPSILON 0.0001f   // 稍微增大表面偏移，以匹配NEE中的RAY_OFFSET
 #define LIGHT_AREA_EPSILON 0.00001f // 用于光源面积计算
 #define NEE_SHADOW_RAY_T_MAX_FACTOR 0.999f // 用于阴影射线与光源距离比较
+#define MIN_COS_FOR_PDF_CONVERSION 0.001f // 最小余弦值，用于PDF转换
+#define maxContribution 1// 最大贡献率，用于俄罗斯轮盘赌
 
 // === 随机函数 (remains the same) ===
 uint seed;
@@ -271,6 +274,7 @@ vec3 traceRay(vec3 initialOrigin, vec3 initialDir) {
 
                 float pdf_bsdf_area = 0.0;
                 if (cos_theta_on_light_bsdf_hit > PDF_VALIDITY_EPSILON && pdf_bsdf_prev_solid_angle > PDF_VALIDITY_EPSILON) {
+                    // pdf_bsdf_area = pdf_bsdf_prev_solid_angle * dist_sq_to_light_bsdf_hit / max(cos_theta_on_light_bsdf_hit, MIN_COS_FOR_PDF_CONVERSION);
                     pdf_bsdf_area = pdf_bsdf_prev_solid_angle * dist_sq_to_light_bsdf_hit / cos_theta_on_light_bsdf_hit;
                 }
 
@@ -366,6 +370,7 @@ vec3 traceRay(vec3 initialOrigin, vec3 initialDir) {
 
                             float pdf_bsdf_area_for_nee = 0.0;
                             if (cos_theta_light_nee > PDF_VALIDITY_EPSILON && pdf_bsdf_solid_angle_for_nee_dir > PDF_VALIDITY_EPSILON) {
+                                // pdf_bsdf_area_for_nee = pdf_bsdf_solid_angle_for_nee_dir * dist_sq_to_light / max(cos_theta_light_nee, MIN_COS_FOR_PDF_CONVERSION);
                                 pdf_bsdf_area_for_nee = pdf_bsdf_solid_angle_for_nee_dir * dist_sq_to_light / cos_theta_light_nee;
                             }
 
@@ -375,6 +380,7 @@ vec3 traceRay(vec3 initialOrigin, vec3 initialDir) {
                             }
                             // else if pdf_nee_val_area is valid, mis_weight_nee remains 1.0
 
+                            // radiance += throughput * vec3(light_mat.emission) * brdf_val_nee * geom_term_nee * mis_weight_nee / max(pdf_nee_val_area, MIN_COS_FOR_PDF_CONVERSION);
                             radiance += throughput * vec3(light_mat.emission) * brdf_val_nee * geom_term_nee * mis_weight_nee / pdf_nee_val_area;
                         }
                     }
@@ -423,6 +429,7 @@ vec3 traceRay(vec3 initialOrigin, vec3 initialDir) {
         
         pdf_bsdf_prev_solid_angle = combined_pdf_bsdf_solid_angle; // Store for next bounce if it hits a light
 
+        // throughput *= totalBRDF_bsdf * NdotL_bsdf / max(MIN_COS_FOR_PDF_CONVERSION, combined_pdf_bsdf_solid_angle);
         throughput *= totalBRDF_bsdf * NdotL_bsdf / combined_pdf_bsdf_solid_angle;
 
         // Russian Roulette
@@ -438,6 +445,7 @@ vec3 traceRay(vec3 initialOrigin, vec3 initialDir) {
         currentOrigin = P_surface + N_surface * RAY_OFFSET_EPSILON;
         currentDir = L_sampled_bsdf;
     }
+    radiance = min(radiance, vec3(maxContribution));
     return radiance;
 }
 
@@ -456,7 +464,14 @@ void main() {
         totalColor += traceRay(cameraPos, rayDir);
     }
     vec3 avgColor = totalColor / float(SPP);
+    // avgColor = min(avgColor, vec3(10.0));
     vec4 prevColor = imageLoad(outputImage, pix);
     vec3 accumulatedColor = (frame == 0) ? avgColor : (prevColor.rgb * float(frame) + avgColor) / float(frame + 1);
     imageStore(outputImage, pix, vec4(accumulatedColor, 1.0));
+
+    
+    // vec4 prevColor = imageLoad(accumulationImages, pix);
+    // vec3 accumulatedColor = (frame == 0) ? avgColor : prevColor.rgb + avgColor;
+    // imageStore(outputImage, pix, (frame == 0)?vec4(avgColor, 1.0):vec4(accumulatedColor / float(frame + 1), 1.0)); // Store the average color for this frame
+    // imageStore(accumulationImages, pix, vec4(accumulatedColor, 1.0)); // Store the accumulated color for next frame
 }

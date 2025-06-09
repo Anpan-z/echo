@@ -23,6 +23,7 @@ void PathTracingResourceManager::init(VkDevice device, VkPhysicalDevice physical
     buildBVH();
     createTriangleStorageBuffer();
     createPathTracingOutputImages();
+    createAccumulationImages();
     createCameraDataBuffer();
 
     pathTracingResourceManagerModelObserver = std::make_unique<PathTracingResourceManagerModelObserver>(this); // 创建模型重新加载观察者
@@ -44,6 +45,11 @@ void PathTracingResourceManager::cleanup() {
         vkDestroyImage(device, storageImages[i], nullptr);
         vkFreeMemory(device, storageImageMemories[i], nullptr);
     }
+    for (size_t i = 0; i < accumulationImages.size(); i++) {
+        vkDestroyImageView(device, accumulationImageViews[i], nullptr);
+        vkDestroyImage(device, accumulationImages[i], nullptr);
+        vkFreeMemory(device, accumulationImageMemories[i], nullptr);
+    }
     for (size_t i = 0; i < cameraDataBuffer.size(); i++) {
         vkDestroyBuffer(device, cameraDataBuffer[i], nullptr);
         vkFreeMemory(device, cameraDataBufferMemory[i], nullptr);
@@ -57,7 +63,13 @@ void PathTracingResourceManager::recreatePathTracingOutputImages() {
         vkDestroyImage(device, storageImages[i], nullptr);
         vkFreeMemory(device, storageImageMemories[i], nullptr);
     }
+    for (size_t i = 0; i < accumulationImages.size(); i++) {
+        vkDestroyImageView(device, accumulationImageViews[i], nullptr);
+        vkDestroyImage(device, accumulationImages[i], nullptr);
+        vkFreeMemory(device, accumulationImageMemories[i], nullptr);
+    }
     createPathTracingOutputImages();
+    createAccumulationImages();
     outPutExtent = swapChainManager->getSwapChainExtent();
     totalSampleCount = 0;
     for(auto observer : pathTracingResourceReloadObservers){
@@ -305,11 +317,26 @@ void PathTracingResourceManager::createPathTracingOutputImages(){
     storageImageViews.resize(storageImages.size());
 
     for (size_t i = 0; i < storageImages.size(); i++) {
-        VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+        VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
         // VkFormat format = swapChainManager->getSwapChainImageFormat();
         vulkanUtils.createImage(device, physicalDevice, swapChainManager->getSwapChainExtent().width, swapChainManager->getSwapChainExtent().height, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, storageImages[i], storageImageMemories[i]);
         vulkanUtils.transitionImageLayout(device, commandManager->getCommandPool(), graphicsQueue, storageImages[i], format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         storageImageViews[i] = vulkanUtils.createImageView(device, storageImages[i], format, VK_IMAGE_ASPECT_COLOR_BIT);
+    }
+}
+
+void PathTracingResourceManager::createAccumulationImages() {
+    VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
+    accumulationImages.resize(swapChainManager->getSwapChainImageViews().size());
+    accumulationImageMemories.resize(accumulationImages.size());
+    accumulationImageViews.resize(accumulationImages.size());
+
+    for (size_t i = 0; i < accumulationImages.size(); i++) {
+        VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        // VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        vulkanUtils.createImage(device, physicalDevice, swapChainManager->getSwapChainExtent().width, swapChainManager->getSwapChainExtent().height, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, accumulationImages[i], accumulationImageMemories[i]);
+        vulkanUtils.transitionImageLayout(device, commandManager->getCommandPool(), graphicsQueue, accumulationImages[i], format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        accumulationImageViews[i] = vulkanUtils.createImageView(device, accumulationImages[i], format, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 }
 

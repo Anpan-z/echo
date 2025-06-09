@@ -57,6 +57,10 @@ public:
     
     std::vector<VkImageView> getPathTracingOutputImageviews() const { return storageImageViews; }
 
+    std::vector<VkImage> getAccumulationImages() const { return accumulationImages; }
+
+    std::vector<VkImageView> getAccumulationImageViews() const { return accumulationImageViews; }
+
     VkBuffer getTriangleStorageBuffer() const { return triangleStorageBuffer; }
 
     VkBuffer getEmissiveTrianglesBuffer() const { return emissiveTrianglesBuffer; }
@@ -102,6 +106,10 @@ private:
     std::vector<VkDeviceMemory> storageImageMemories;
     std::vector<VkImageView> storageImageViews;
 
+    std::vector<VkImage> accumulationImages;
+    std::vector<VkDeviceMemory> accumulationImageMemories;
+    std::vector<VkImageView> accumulationImageViews;
+
     std::vector<VkBuffer> cameraDataBuffer;
     std::vector<VkDeviceMemory> cameraDataBufferMemory;
     std::vector<void*> cameraDataBuffersMapped;
@@ -127,6 +135,7 @@ private:
 
     void createTriangleStorageBuffer();
     void createPathTracingOutputImages();
+    void createAccumulationImages();
     void createCameraDataBuffer();
 
 };

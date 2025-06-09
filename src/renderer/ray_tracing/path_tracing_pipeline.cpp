@@ -47,16 +47,31 @@ void PathTracingPipeline::updateOutputImageDescriptorSet() {
         imageInfo.imageView = pathTracingResourceManager->getPathTracingOutputImageviews()[i];
         imageInfo.sampler = VK_NULL_HANDLE;
 
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = imageDescriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pImageInfo = &imageInfo;
+        VkDescriptorImageInfo accumulationImageInfo{};
+        accumulationImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL; // 图像布局必须是 GENERAL
+        accumulationImageInfo.imageView = pathTracingResourceManager->getAccumulationImageViews()[i]; // 存储图像的视图
+        accumulationImageInfo.sampler = nullptr; // 如果不需要采样器，可以设置为 nullptr
 
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        VkWriteDescriptorSet outputimageWrite{};
+        outputimageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        outputimageWrite.dstSet = imageDescriptorSets[i];
+        outputimageWrite.dstBinding = 0;
+        outputimageWrite.dstArrayElement = 0;
+        outputimageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        outputimageWrite.descriptorCount = 1;
+        outputimageWrite.pImageInfo = &imageInfo;
+
+        VkWriteDescriptorSet accumulationImageWrite{};
+        accumulationImageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        accumulationImageWrite.dstSet = imageDescriptorSets[i];
+        accumulationImageWrite.dstBinding = 1; // 对应布局中的绑定点 1
+        accumulationImageWrite.dstArrayElement = 0;
+        accumulationImageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        accumulationImageWrite.descriptorCount = 1;
+        accumulationImageWrite.pImageInfo = &accumulationImageInfo;
+
+        std::vector<VkWriteDescriptorSet> descriptorWrites = {outputimageWrite, accumulationImageWrite};
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 }
 
@@ -147,6 +162,16 @@ VkCommandBuffer PathTracingPipeline::recordCommandBuffer(uint32_t frameIndex, ui
         0, nullptr,
         1, &barrier
     );
+    barrier.image = pathTracingResourceManager->getAccumulationImages()[imageIndex];
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // 源阶段
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // 目标阶段
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
     
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pathTracingPipeline);
 
@@ -201,6 +226,16 @@ VkCommandBuffer PathTracingPipeline::recordCommandBuffer(uint32_t frameIndex, ui
         commandBuffer,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // 源阶段
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // 目标阶段
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+    barrier.image = pathTracingResourceManager->getAccumulationImages()[imageIndex];
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // 源阶段
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // 目标阶段
         0,
         0, nullptr,
         0, nullptr,
@@ -279,10 +314,19 @@ void PathTracingPipeline::createDescriptorSetLayout() {
     storageImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT; // 仅在计算着色器中使用
     storageImageBinding.pImmutableSamplers = nullptr; // 不使用采样器
 
+    VkDescriptorSetLayoutBinding accumulationImagesBinding{};
+    accumulationImagesBinding.binding = 1;
+    accumulationImagesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; // 存储图像
+    accumulationImagesBinding.descriptorCount = 1;
+    accumulationImagesBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT; // 仅在计算着色器中使用
+    accumulationImagesBinding.pImmutableSamplers = nullptr; // 不使用采样器
+
+    std::array<VkDescriptorSetLayoutBinding, 2> imageBindings = {storageImageBinding, accumulationImagesBinding};
+    
     VkDescriptorSetLayoutCreateInfo set0LayoutInfo{};
     set0LayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    set0LayoutInfo.bindingCount = 1;
-    set0LayoutInfo.pBindings = &storageImageBinding;
+    set0LayoutInfo.bindingCount = static_cast<uint32_t>(imageBindings.size());
+    set0LayoutInfo.pBindings = imageBindings.data();
 
     if (vkCreateDescriptorSetLayout(device, &set0LayoutInfo, nullptr, &imageDescriptorSetLayout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor set layout for set 0!");
@@ -348,7 +392,7 @@ void PathTracingPipeline::createDescriptorPool() {
     poolSizes[1].descriptorCount = 2 * static_cast<uint32_t>(frameCount);
 
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; // 类型为存储缓冲区
-    poolSizes[2].descriptorCount = 1 * static_cast<uint32_t>(imageCount);
+    poolSizes[2].descriptorCount = 2 * static_cast<uint32_t>(imageCount);
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -394,6 +438,11 @@ void PathTracingPipeline::createDescriptorSets() {
         imageInfo.imageView = pathTracingResourceManager->getPathTracingOutputImageviews()[i]; // 存储图像的视图
         imageInfo.sampler = nullptr; // 如果不需要采样器，可以设置为 nullptr
 
+        VkDescriptorImageInfo accumulationImageInfo{};
+        accumulationImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL; // 图像布局必须是 GENERAL
+        accumulationImageInfo.imageView = pathTracingResourceManager->getAccumulationImageViews()[i]; // 存储图像的视图
+        accumulationImageInfo.sampler = nullptr; // 如果不需要采样器，可以设置为 nullptr
+
         VkWriteDescriptorSet imageWrite{};
         imageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         imageWrite.dstSet = imageDescriptorSets[i];
@@ -403,7 +452,16 @@ void PathTracingPipeline::createDescriptorSets() {
         imageWrite.descriptorCount = 1;
         imageWrite.pImageInfo = &imageInfo;
 
-        std::vector<VkWriteDescriptorSet> descriptorWrites = {imageWrite};
+        VkWriteDescriptorSet accumulationImageWrite{};
+        accumulationImageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        accumulationImageWrite.dstSet = imageDescriptorSets[i];
+        accumulationImageWrite.dstBinding = 1; // 对应布局中的绑定点 1
+        accumulationImageWrite.dstArrayElement = 0;
+        accumulationImageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        accumulationImageWrite.descriptorCount = 1;
+        accumulationImageWrite.pImageInfo = &accumulationImageInfo;
+
+        std::vector<VkWriteDescriptorSet> descriptorWrites = {imageWrite, accumulationImageWrite};
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 
