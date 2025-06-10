@@ -92,6 +92,11 @@ void PathTracingPipeline::updateStorageBufferDescriptorSet() {
         materialBufferInfo.offset = 0;
         materialBufferInfo.range = sizeof(MaterialUniformBufferObject) * pathTracingResourceManager->getShapeNames().size();
 
+        VkDescriptorBufferInfo emissiveTrianglesBufferInfo{};
+        emissiveTrianglesBufferInfo.buffer = pathTracingResourceManager->getEmissiveTrianglesBuffer();
+        emissiveTrianglesBufferInfo.offset = 0;
+        emissiveTrianglesBufferInfo.range = VK_WHOLE_SIZE; // 假设整个缓冲区都需要
+
         VkWriteDescriptorSet trianglesWrite{};
         trianglesWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         trianglesWrite.dstSet = frameDescriptorSets[i];
@@ -119,7 +124,16 @@ void PathTracingPipeline::updateStorageBufferDescriptorSet() {
         materialsWrite.descriptorCount = 1;
         materialsWrite.pBufferInfo = &materialBufferInfo;
 
-        std::vector<VkWriteDescriptorSet> descriptorWrites = {trianglesWrite, bvhBufferWrite, materialsWrite};
+        VkWriteDescriptorSet emissiveTrianglesWrite{};
+        emissiveTrianglesWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        emissiveTrianglesWrite.dstSet = frameDescriptorSets[i];
+        emissiveTrianglesWrite.dstBinding = 4; // Emissive Triangles 绑定点
+        emissiveTrianglesWrite.dstArrayElement = 0;
+        emissiveTrianglesWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        emissiveTrianglesWrite.descriptorCount = 1;
+        emissiveTrianglesWrite.pBufferInfo = &emissiveTrianglesBufferInfo;
+
+        std::vector<VkWriteDescriptorSet> descriptorWrites = { trianglesWrite, bvhBufferWrite, materialsWrite, emissiveTrianglesWrite };
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 }

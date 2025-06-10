@@ -84,6 +84,8 @@ void PathTracingResourceManager::recreteTriangleData() {
     vkFreeMemory(device, triangleStorageBufferMemory, nullptr);
     vkDestroyBuffer(device, BVHStorageBuffer, nullptr);
     vkFreeMemory(device, BVHStorageBufferMemory, nullptr);
+    vkDestroyBuffer(device, emissiveTrianglesBuffer, nullptr);
+    vkFreeMemory(device, emissiveTrianglesBufferMemory, nullptr);
     buildTrianglesFromMesh(vertexResourceManager->getVertices(), vertexResourceManager->getIndices());
     buildBVH();
     createTriangleStorageBuffer();
