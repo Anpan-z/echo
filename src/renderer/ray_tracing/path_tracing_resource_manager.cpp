@@ -28,6 +28,7 @@ void PathTracingResourceManager::init(VkDevice device, VkPhysicalDevice physical
 
     pathTracingResourceManagerModelObserver = std::make_unique<PathTracingResourceManagerModelObserver>(this); // 创建模型重新加载观察者
     vertexResourceManager.addModelReloadObserver(pathTracingResourceManagerModelObserver.get()); // 添加观察者
+    vertexResourceManager.addMaterialUpdateObserver(pathTracingResourceManagerModelObserver.get()); // 添加材质更新观察者
 }
 
 void PathTracingResourceManager::cleanup() {

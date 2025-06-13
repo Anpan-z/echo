@@ -176,6 +176,7 @@ void VertexResourceManager::loadModel(const std::string& modelPath, const std::s
             emission = 20.0f; // 如果是光源，设置自发光强度
         }
         materialUniformBufferObjects.push_back(std::make_shared<MaterialUniformBufferObject>(vertices.back().color, emission)); // 添加材质统一缓冲区对象
+        preMaterialUniformBufferObjects.push_back(std::make_shared<MaterialUniformBufferObject>(vertices.back().color, emission));
         shapeNames.push_back(shape.name); // 存储形状名称
     }
 }
@@ -380,6 +381,27 @@ void VertexResourceManager::updateUniformBuffer(uint32_t currentFrame, VkExtent2
         materialUbo[i].emission = materialUniformBufferObjects[i]->emission;
     }
     memcpy(materialUniformBuffersMapped[currentFrame], materialUbo.data(), sizeof(MaterialUniformBufferObject) * shapeNames.size());
+    
+    // 检查材质是否发生变化，并通知观察者
+    bool materialChanged = false;
+    for (size_t i = 0; i < shapeNames.size(); i++) {
+        // 更新材质统一缓冲区对象
+        if(preMaterialUniformBufferObjects[i]->albedo != materialUbo[i].albedo) materialChanged = true;
+        if(preMaterialUniformBufferObjects[i]->metallic != materialUbo[i].metallic) materialChanged = true;
+        if(preMaterialUniformBufferObjects[i]->roughness != materialUbo[i].roughness) materialChanged = true;
+        if(preMaterialUniformBufferObjects[i]->ambientOcclusion != materialUbo[i].ambientOcclusion) materialChanged = true;
+    }
+    if (materialChanged) {
+        for (size_t i = 0; i < shapeNames.size(); i++){
+            preMaterialUniformBufferObjects[i]->albedo = materialUbo[i].albedo;
+            preMaterialUniformBufferObjects[i]->metallic = materialUbo[i].metallic;
+            preMaterialUniformBufferObjects[i]->roughness = materialUbo[i].roughness;
+            preMaterialUniformBufferObjects[i]->ambientOcclusion = materialUbo[i].ambientOcclusion;
+        }
+        for (auto observer : materialUpdateObservers) {
+            observer->onMaterialUpdated();
+        }
+    }
 }
 
 void VertexResourceManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {

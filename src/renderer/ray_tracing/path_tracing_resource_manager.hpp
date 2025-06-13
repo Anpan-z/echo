@@ -52,6 +52,11 @@ public:
     void recreatePathTracingOutputImages(VkExtent2D imageExtent);
 
     void recreteTriangleData();
+
+    void resetTotalSampleCount() {
+        totalSampleCount = 0;
+        framesToForceZero = maxFramesInFlight;
+    }
     
     std::vector<VkImage> getPathTracingOutputImages() const { return storageImages; }
     
@@ -140,7 +145,8 @@ private:
 
 };
 
-class PathTracingResourceManagerModelObserver : public ModelReloadObserver {
+class PathTracingResourceManagerModelObserver : public ModelReloadObserver,
+                                                public MaterialIpdateObsever {
     public:
         PathTracingResourceManagerModelObserver(PathTracingResourceManager* pathTracingResourceManager) // 使用指向 RenderPipeline 的指针
             : pathTracingResourceManager(pathTracingResourceManager) {}
@@ -149,6 +155,13 @@ class PathTracingResourceManagerModelObserver : public ModelReloadObserver {
             // 当模型重新加载时，更新 RenderPipeline 的描述符集
             if (pathTracingResourceManager) {
                 pathTracingResourceManager->recreteTriangleData();
+            }
+        }
+
+        void onMaterialUpdated() override {
+            // 当材质更新时，重新累计采样计数
+            if (pathTracingResourceManager) {
+                pathTracingResourceManager->resetTotalSampleCount();
             }
         }
     

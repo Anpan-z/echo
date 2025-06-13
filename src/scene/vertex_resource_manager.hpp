@@ -53,6 +53,12 @@ class ModelReloadObserver {
         virtual ~ModelReloadObserver() = default;
     };
 
+class MaterialIpdateObsever {
+    public:
+        virtual void onMaterialUpdated() = 0; // 当材质更新时的回调
+        virtual ~MaterialIpdateObsever() = default;
+    };
+
 class VertexResourceManager {
 public:
     // static VertexResourceManager& getInstance();
@@ -104,6 +110,8 @@ public:
 
     void addModelReloadObserver(ModelReloadObserver* observer) { modelReloadObservers.push_back(observer);}
 
+    void addMaterialUpdateObserver(MaterialIpdateObsever* observer) { materialUpdateObservers.push_back(observer); }
+
 private:
     VkDevice device;
     VkPhysicalDevice physicalDevice;
@@ -137,8 +145,10 @@ private:
     float* metallics = &metallicValue; // 金属度数组
     std::vector<std::string> shapeNames; // 形状名称数组
     std::vector<std::shared_ptr<MaterialUniformBufferObject>> materialUniformBufferObjects; // 材质统一缓冲区对象
+    std::vector<std::shared_ptr<MaterialUniformBufferObject>> preMaterialUniformBufferObjects; // 材质统一缓冲区对象
     
     std::vector<ModelReloadObserver*> modelReloadObservers; // 存储观察者
+    std::vector<MaterialIpdateObsever*> materialUpdateObservers; // 存储材质更新观察者
     
     // 工具函数
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
