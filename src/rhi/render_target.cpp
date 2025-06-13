@@ -7,6 +7,7 @@ void RenderTarget::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapCh
     this->device = device;
     this->physicalDevice = physicalDevice;
     this->swapChainManager = &swapChainManager;
+    this->offScreenExtent = swapChainManager.getSwapChainExtent();
     this->offScreenRenderPass = offScreenRenderPass;
     this->presentRenderPass = renderPass;
 
@@ -17,12 +18,8 @@ void RenderTarget::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapCh
     createOffScreenSampler();
 }
 
-void RenderTarget::cleanup() {
+void RenderTarget::cleanupOffScreenTarget() {
     vkDeviceWaitIdle(device);
-    for (auto framebuffer : framebuffers) {
-        vkDestroyFramebuffer(device, framebuffer, nullptr);
-    }
-    framebuffers.clear();
     for (size_t i = 0; i < depthImages.size(); i++) {
         vkDestroyImageView(device, depthImageViews[i], nullptr);
         vkFreeMemory(device, depthImageMemories[i], nullptr);
@@ -31,12 +28,26 @@ void RenderTarget::cleanup() {
     for (auto framebuffer : offScreenFramebuffers) {
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
+    offScreenFramebuffers.clear();
     for (size_t i = 0; i < offScreenImages.size(); i++) {
         vkDestroyImageView(device, offScreenImageViews[i], nullptr);
         vkFreeMemory(device, offScreenImageMemories[i], nullptr);
         vkDestroyImage(device, offScreenImages[i], nullptr);
     }
     vkDestroySampler(device, offScreenSampler, nullptr);
+}
+
+void RenderTarget::cleanupPresentTarget() {
+    vkDeviceWaitIdle(device);
+    for (auto framebuffer : framebuffers) {
+        vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
+    framebuffers.clear();
+}
+
+void RenderTarget::cleanup() {
+    cleanupOffScreenTarget();
+    cleanupPresentTarget();
 }
 
 void RenderTarget::createDepthResources(VkExtent2D imageExtent) {

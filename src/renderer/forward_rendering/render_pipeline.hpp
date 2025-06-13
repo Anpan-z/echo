@@ -18,7 +18,7 @@ public:
     void setup(ShadowMapping& shadowMapping);
 
     // 录制指令缓冲区
-    VkCommandBuffer recordCommandBuffer(uint32_t bufferIndex, VkFramebuffer swapChainFramebuffers);
+    VkCommandBuffer recordCommandBuffer(uint32_t bufferIndex, VkFramebuffer swapChainFramebuffers, VkExtent2D imageExtent);
 
     // 获取资源
     VkRenderPass getRenderPass() const { return renderPass; }

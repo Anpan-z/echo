@@ -7,11 +7,26 @@
 class RenderTarget {
 public:
     void init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager, VkRenderPass renderPass, VkRenderPass offScreenRenderPass);
+    void cleanupOffScreenTarget();
+    void cleanupPresentTarget();
     void cleanup();
 
-    void recreateRenderTarget() {
-        cleanup();
-        createOffScreenTarget(swapChainManager->getSwapChainExtent(), offScreenRenderPass);
+    void recreateRenderTarget(VkExtent2D imageExtent) {
+        vkDeviceWaitIdle(device);
+        recreateOffScreenTarget(imageExtent);
+        recreatePresentTarget();
+    }
+
+    void recreateOffScreenTarget(VkExtent2D imageExtent) {
+        vkDeviceWaitIdle(device);
+        cleanupOffScreenTarget();
+        this->offScreenExtent = imageExtent;
+        createOffScreenTarget(imageExtent, offScreenRenderPass);
+    }
+
+    void recreatePresentTarget() {
+        vkDeviceWaitIdle(device);
+        cleanupPresentTarget();
         createPresentTarget(swapChainManager->getSwapChainImageViews(), presentRenderPass);
     }
     void createOffScreenTarget(VkExtent2D imageExtent, VkRenderPass offScreenRenderPass){
@@ -23,6 +38,7 @@ public:
     void createPresentTarget(const std::vector<VkImageView>& swapChainImageViews, VkRenderPass renderPass){
         createFramebuffers(swapChainImageViews, renderPass);
     }
+    const VkExtent2D& getOffScreenExtent() const { return offScreenExtent; }
     const std::vector<VkFramebuffer>& getFramebuffers() const { return framebuffers; }
     const std::vector<VkFramebuffer>& getOffScreenFramebuffers() const { return offScreenFramebuffers; }
     const std::vector<VkImageView>& getDepthImageView() const { return depthImageViews; }
@@ -34,6 +50,8 @@ private:
     VkDevice device = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     SwapChainManager* swapChainManager = nullptr;
+
+    VkExtent2D offScreenExtent;
 
     VkRenderPass presentRenderPass = VK_NULL_HANDLE;
     VkRenderPass offScreenRenderPass = VK_NULL_HANDLE;

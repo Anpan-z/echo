@@ -204,7 +204,7 @@ private:
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             swapChainManager.recreateSwapChain();
-            renderTarget.recreateRenderTarget();
+            renderTarget.recreateRenderTarget(contentSize);
             imguiManager.recreatWindow();
             pathTracingResourceManager.recreatePathTracingOutputImages(contentSize);
             gbufferResourceManager.recreateGBuffer(imguiManager.getContentExtent());
@@ -216,12 +216,12 @@ private:
         }
 
         // imguiManager.addTexture(&pathTracingResourceManager.getPathTracingOutputImageviews()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        // imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        imguiManager.addTexture(&svgFilterResourceManager.getDenoisedOutputImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        // imguiManager.addTexture(&svgFilterResourceManager.getDenoisedOutputImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         contentSize = imguiManager.renderImGuiInterface();
         
         shadowMapping.updateShadowUniformBuffer(currentFrame); // update lightSpaceMatrix
-        vertexResourceManager.updateUniformBuffer(currentFrame, swapChainManager.getSwapChainExtent(), camera);
+        vertexResourceManager.updateUniformBuffer(currentFrame, contentSize, camera);
         pathTracingResourceManager.updateCameraDataBuffer(currentFrame, contentSize, camera);
 
         vkResetFences(device, 1, &inFlightFences[currentFrame]);
@@ -233,15 +233,15 @@ private:
         
         
         auto shadowcommandBuffer = shadowMapping.recordShadowCommandBuffer(currentFrame);
-        auto commandBuffer =  renderPipeline.recordCommandBuffer(currentFrame, renderTarget.getOffScreenFramebuffers()[imageIndex]);
+        auto commandBuffer =  renderPipeline.recordCommandBuffer(currentFrame, renderTarget.getOffScreenFramebuffers()[imageIndex], renderTarget.getOffScreenExtent());
         auto pathTracingCommandBuffer = pathTracingPipeline.recordCommandBuffer(currentFrame, imageIndex);
         auto gbufferCommandBuffer = gbufferPass.recordCommandBuffer(currentFrame, gbufferResourceManager.getFramebuffer(imageIndex));
         auto svgFilterCommandBuffer = svgFilterPass.recordCommandBuffer(currentFrame, imageIndex);
 
         VkCommandBuffer imguiCommandBuffer =  imguiManager.recordCommandbuffer(currentFrame, renderTarget.getFramebuffers()[imageIndex]);
         
-        std::array<VkCommandBuffer, 4> commandBuffers = { pathTracingCommandBuffer, gbufferCommandBuffer, svgFilterCommandBuffer, imguiCommandBuffer };
-        // std::array<VkCommandBuffer, 6> commandBuffers = {shadowcommandBuffer, pathTracingCommandBuffer, commandBuffer, gbufferCommandBuffer, svgFilterCommandBuffer, imguiCommandBuffer};
+        // std::array<VkCommandBuffer, 4> commandBuffers = { pathTracingCommandBuffer, gbufferCommandBuffer, svgFilterCommandBuffer, imguiCommandBuffer };
+        std::array<VkCommandBuffer, 6> commandBuffers = {shadowcommandBuffer, pathTracingCommandBuffer, commandBuffer, gbufferCommandBuffer, svgFilterCommandBuffer, imguiCommandBuffer};
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -280,6 +280,8 @@ private:
             imguiManager.getContentExtent().height != imguiManager.getPreContentExtent().height){
                 //延迟一帧更新，等待imgui计算出新的内容大小
                 vkDeviceWaitIdle(device);
+                renderTarget.recreateOffScreenTarget(contentSize);
+                imguiManager.recreatWindow();
                 pathTracingResourceManager.recreatePathTracingOutputImages(contentSize);
                 gbufferResourceManager.recreateGBuffer(contentSize);
                 svgFilterResourceManager.recreateDenoisedOutputImages(contentSize);
@@ -287,8 +289,9 @@ private:
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || windowManager.isFramebufferResized()) {
             windowManager.setFramebufferResized(false);
             swapChainManager.recreateSwapChain();
-            renderTarget.recreateRenderTarget();
-            imguiManager.recreatWindow();
+            renderTarget.recreatePresentTarget();
+            // renderTarget.recreateRenderTarget(contentSize);
+            // imguiManager.recreatWindow();
             // pathTracingResourceManager.recreatePathTracingOutputImages(swapChainManager.getSwapChainExtent());
             // gbufferResourceManager.recreateGBuffer();
             // svgFilterResourceManager.recreateDenoisedOutputImages();
