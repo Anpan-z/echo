@@ -215,9 +215,9 @@ private:
             throw std::runtime_error("failed to acquire swap chain image!");
         }
 
-        imguiManager.addTexture(&pathTracingResourceManager.getPathTracingOutputImageviews()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        // imguiManager.addTexture(&pathTracingResourceManager.getPathTracingOutputImageviews()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         // imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        // imguiManager.addTexture(&svgFilterResourceManager.getDenoisedOutputImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        imguiManager.addTexture(&svgFilterResourceManager.getDenoisedOutputImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         contentSize = imguiManager.renderImGuiInterface();
         
         shadowMapping.updateShadowUniformBuffer(currentFrame); // update lightSpaceMatrix

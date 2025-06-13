@@ -16,7 +16,7 @@ void PathTracingResourceManager::init(VkDevice device, VkPhysicalDevice physical
     this->vertexResourceManager = &vertexResourceManager;
     this->materialUniformBuffers = &vertexResourceManager.getMaterialUniformBuffers();
     //用于rebuild相关资源时双帧或多帧同步
-    this->maxFramesInFlight = MAX_FRAMES_IN_FLIGHT;
+    this->maxFramesInFlight = MAX_FRAMES_IN_FLIGHT + 1;
     this->framesToForceZero = maxFramesInFlight;
     
     buildTrianglesFromMesh(vertexResourceManager.getVertices(), vertexResourceManager.getIndices());
