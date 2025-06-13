@@ -18,6 +18,9 @@ void ImGuiManager::init(GLFWwindow* window, VulkanContext& vulkanContext, SwapCh
     this->vertexResourceManager = &vertexResourceManager;
     this->commandBuffers = commandManager.allocateCommandBuffers(2);
 
+    this->preContentExtent = swapChainManager.getSwapChainExtent();
+    this->contentExtent = swapChainManager.getSwapChainExtent();
+
     createDescriptorPool();
     createRenderPass();
     IMGUI_CHECKVERSION();
@@ -268,13 +271,13 @@ VkExtent2D ImGuiManager::renderImGuiInterface(){
     // ImGui::Text("This is a Vulkan ImGui example.");
     ImVec2 imageSize = availableSize;
     // 计算纹理的宽高比
-    ImVec2 textureSize = ImVec2((float)swapChainManager->getSwapChainExtent().width, (float)swapChainManager->getSwapChainExtent().height); // 纹理的原始尺寸
-    float aspectRatio = textureSize.x / textureSize.y;
-    if (availableSize.x / availableSize.y > aspectRatio) {
-        imageSize.x = availableSize.y * aspectRatio;
-    } else {
-        imageSize.y = availableSize.x / aspectRatio;
-    }
+    // ImVec2 textureSize = ImVec2((float)swapChainManager->getSwapChainExtent().width, (float)swapChainManager->getSwapChainExtent().height); // 纹理的原始尺寸
+    // float aspectRatio = textureSize.x / textureSize.y;
+    // if (availableSize.x / availableSize.y > aspectRatio) {
+    //     imageSize.x = availableSize.y * aspectRatio;
+    // } else {
+    //     imageSize.y = availableSize.x / aspectRatio;
+    // }
     // 居中偏移（保留四周 padding）
     ImVec2 cursorPos = ImGui::GetCursorPos();
     ImVec2 offset;
@@ -323,9 +326,9 @@ VkExtent2D ImGuiManager::renderImGuiInterface(){
     static float metallic = 0.0f;
 
     // 可调节金属度（metallic），范围是 0.0 到 1.0
-    ImGui::SliderFloat("Metallic", vertexResourceManager->getMetallics(), 0.0f, 1.0f);
+    // ImGui::SliderFloat("Metallic", vertexResourceManager->getMetallics(), 0.0f, 1.0f);
     static float ao = 1.0f;
-    ImGui::SliderFloat("AO", &ao, 0.0f, 1.0f);
+    // ImGui::SliderFloat("AO", &ao, 0.0f, 1.0f);
     // // 可调节粗糙度（roughness），范围是 0.0 到 1.0
     // ImGui::SliderFloat("Roughness", nullptr, 0.0f, 1.0f);
     
@@ -333,6 +336,7 @@ VkExtent2D ImGuiManager::renderImGuiInterface(){
     // ImGui::SliderFloat("AO", nullptr, 0.0f, 1.0f);
     
     ImGui::End();
-
+    preContentExtent = contentExtent; // 保存上一次的内容区域大小
+    contentExtent = {static_cast<uint32_t>(availableSize.x), static_cast<uint32_t>(availableSize.y)};
     return {static_cast<uint32_t>(availableSize.x), static_cast<uint32_t>(availableSize.y)};
 }

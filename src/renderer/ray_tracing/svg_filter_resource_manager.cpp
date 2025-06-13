@@ -46,7 +46,7 @@ void SVGFilterResourceManager::cleanup()
     }
 }
 
-void SVGFilterResourceManager::recreateDenoisedOutputImages()
+void SVGFilterResourceManager::recreateDenoisedOutputImages(VkExtent2D imageExtent)
 {
     vkDeviceWaitIdle(device); // 等待设备空闲
     for (uint32_t i = 0; i < imageCount; ++i)
@@ -55,9 +55,9 @@ void SVGFilterResourceManager::recreateDenoisedOutputImages()
         vkDestroyImage(device, denoisedOutputImages[i], nullptr);
         vkFreeMemory(device, denoisedOutputImageMemories[i], nullptr);
     }
-    this->outPutExtent = swapChainManager->getSwapChainExtent();
-    this->imageWidth = swapChainManager->getSwapChainExtent().width;
-    this->imageHeight = swapChainManager->getSwapChainExtent().height;
+    this->outPutExtent = imageExtent;
+    this->imageWidth = imageExtent.width;
+    this->imageHeight = imageExtent.height;
     createDenoisedOutputImages();
 
     for (auto observer : svgFilterImageRecreateObservers)

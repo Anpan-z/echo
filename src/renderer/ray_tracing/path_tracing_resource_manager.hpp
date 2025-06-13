@@ -49,7 +49,7 @@ public:
 
     void updateCameraDataBuffer(uint32_t currentFrame, VkExtent2D swapChainExtent, Camera& camera);
 
-    void recreatePathTracingOutputImages();
+    void recreatePathTracingOutputImages(VkExtent2D imageExtent);
 
     void recreteTriangleData();
     

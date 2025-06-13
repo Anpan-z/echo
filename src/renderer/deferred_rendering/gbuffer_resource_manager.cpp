@@ -8,9 +8,8 @@ void GBufferResourceManager::init(VkDevice device, VkPhysicalDevice physicalDevi
     this->physicalDevice = physicalDevice;
     this->gbufferRenderPass = renderPass;
     this->swapChainManager = &swapChainManager;
-    this->width = swapChainManager.getSwapChainExtent().width;
-    this->height = swapChainManager.getSwapChainExtent().height;
     this->imageCount = swapChainManager.getSwapChainImages().size();
+    this->outPutExtent = swapChainManager.getSwapChainExtent();
 
     // 创建 G-Buffer 附件
     createAttachment(colorAttachments, swapChainManager.getSwapChainImageFormat(),
@@ -50,14 +49,29 @@ void GBufferResourceManager::cleanup()
     }
 }
 
-void GBufferResourceManager::recreateGBuffer()
+void GBufferResourceManager::recreateGBuffer(VkExtent2D imageExtent)
 {
     vkDeviceWaitIdle(device); // 等待设备空闲
 
     // 清理旧的资源
     cleanup();
     // 重新创建 G-Buffer 附件和帧缓冲
-    init(device, physicalDevice, gbufferRenderPass, *swapChainManager);
+    this->outPutExtent = imageExtent;
+
+    // 创建 G-Buffer 附件
+    createAttachment(colorAttachments, swapChainManager->getSwapChainImageFormat(),
+                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+    createAttachment(normalAttachments, VK_FORMAT_R16G16B16A16_SFLOAT,
+                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+    createAttachment(positionAttachments, VK_FORMAT_R16G16B16A16_SFLOAT,
+                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+    createAttachment(depthAttachments, VK_FORMAT_D32_SFLOAT,
+                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                     VK_IMAGE_ASPECT_DEPTH_BIT);
+
+    // 创建帧缓冲
+    createFramebuffer(gbufferRenderPass);
+
     for (auto observer : gbufferResourceRecreateObservers)
     {
         observer->onGBufferRecreated(); // 通知观察者 G-Buffer 已重新创建
@@ -72,7 +86,7 @@ void GBufferResourceManager::createAttachment(std::vector<GBufferAttachment>& at
     {
         attachment[index].format = format;
         VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
-        vulkanUtils.createImage(device, physicalDevice, width, height, format, VK_IMAGE_TILING_OPTIMAL, usage,
+        vulkanUtils.createImage(device, physicalDevice, outPutExtent.width, outPutExtent.height, format, VK_IMAGE_TILING_OPTIMAL, usage,
                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, attachment[index].image, attachment[index].memory);
         attachment[index].view = vulkanUtils.createImageView(device, attachment[index].image, format, aspectFlags);
     }
@@ -91,8 +105,8 @@ void GBufferResourceManager::createFramebuffer(VkRenderPass renderPass)
         framebufferInfo.renderPass = renderPass;
         framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
         framebufferInfo.pAttachments = attachments.data();
-        framebufferInfo.width = width;
-        framebufferInfo.height = height;
+        framebufferInfo.width = outPutExtent.width;
+        framebufferInfo.height = outPutExtent.height;
         framebufferInfo.layers = 1;
 
         if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffers[i]) != VK_SUCCESS)

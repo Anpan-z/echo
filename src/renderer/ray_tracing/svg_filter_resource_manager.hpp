@@ -20,7 +20,7 @@ class SVGFilterResourceManager
 
     void cleanup();
 
-    void recreateDenoisedOutputImages();
+    void recreateDenoisedOutputImages(VkExtent2D imageExtent);
 
     std::vector<VkImageView> getDenoisedOutputImageView() const
     {

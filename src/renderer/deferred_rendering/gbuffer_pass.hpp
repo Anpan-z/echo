@@ -10,7 +10,8 @@ class GBufferPass
 {
   public:
     void init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager,
-              VertexResourceManager& vertexResourceManager, std::vector<VkCommandBuffer>&& CommandBuffers);
+              VertexResourceManager& vertexResourceManager, GBufferResourceManager& gbufferResourceManager,
+              std::vector<VkCommandBuffer>&& CommandBuffers);
 
     void cleanup();
 
@@ -40,6 +41,7 @@ class GBufferPass
     uint32_t height;
 
     VertexResourceManager* vertexResourceManager = nullptr;
+    GBufferResourceManager* gbufferResourceManager = nullptr;
     SwapChainManager* swapChainManager = nullptr;
 
     std::unique_ptr<GBufferPassObserver> gbufferPassObserver;

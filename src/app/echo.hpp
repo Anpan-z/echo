@@ -30,6 +30,7 @@ const uint32_t HEIGHT = 600;
 
 //const std::string MODEL_PATH = "CornellBox-Original.obj";
 const std::string MODEL_PATH = "../model/CornellBox/CornellBox-Original.obj";
+// const std::string MODEL_PATH = "../model/CornellBox/CornellBox-Glossy.obj";
 //const std::string MTL_PATH = "CornellBox-Original.mtl";
 const std::string MTL_PATH = "../model/CornellBox";
 const std::string TEXTURE_PATH = "../texture/golden_gate_hills_1k.hdr";
@@ -80,6 +81,7 @@ private:
     SVGFilterResourceManager svgFilterResourceManager;
 
     Camera camera;
+    VkExtent2D contentSize;
     
     void initWindow() {
         windowManager.init(WIDTH, HEIGHT, "Vulkan");
@@ -116,12 +118,14 @@ private:
         
         renderPipeline.setup(shadowMapping);
         
-        gbufferPass.init(device, physicalDevice, swapChainManager, vertexResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+        gbufferPass.init(device, physicalDevice, swapChainManager, vertexResourceManager, gbufferResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
         gbufferResourceManager.init(device, physicalDevice, gbufferPass.getGBufferRenderPass(), swapChainManager);
+
         svgFilterResourceManager.init(device, physicalDevice, graphicsQueue, swapChainManager, commandManager);
         svgFilterPass.init(device, physicalDevice, swapChainManager, gbufferResourceManager, pathTracingResourceManager, svgFilterResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
         camera.init();
         createSyncObjects();
+        contentSize = swapChainManager.getSwapChainExtent();
     }
 
     float deltaTime = 0.0f; // 每帧的时间间隔
@@ -202,18 +206,23 @@ private:
             swapChainManager.recreateSwapChain();
             renderTarget.recreateRenderTarget();
             imguiManager.recreatWindow();
-            pathTracingResourceManager.recreatePathTracingOutputImages();
-            gbufferResourceManager.recreateGBuffer();
-            svgFilterResourceManager.recreateDenoisedOutputImages();
+            pathTracingResourceManager.recreatePathTracingOutputImages(contentSize);
+            gbufferResourceManager.recreateGBuffer(imguiManager.getContentExtent());
+            svgFilterResourceManager.recreateDenoisedOutputImages(imguiManager.getContentExtent());
             return;
         }
         else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             throw std::runtime_error("failed to acquire swap chain image!");
         }
 
+        // imguiManager.addTexture(&pathTracingResourceManager.getPathTracingOutputImageviews()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        // imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        imguiManager.addTexture(&svgFilterResourceManager.getDenoisedOutputImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        contentSize = imguiManager.renderImGuiInterface();
+        
         shadowMapping.updateShadowUniformBuffer(currentFrame); // update lightSpaceMatrix
         vertexResourceManager.updateUniformBuffer(currentFrame, swapChainManager.getSwapChainExtent(), camera);
-        pathTracingResourceManager.updateCameraDataBuffer(currentFrame, swapChainManager.getSwapChainExtent(), camera);
+        pathTracingResourceManager.updateCameraDataBuffer(currentFrame, contentSize, camera);
 
         vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
@@ -222,10 +231,6 @@ private:
         vkResetCommandBuffer(imguiManager.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
         vkResetCommandBuffer(pathTracingPipeline.getCommandBuffer(currentFrame), /*VkCommandBufferResetFlagBits*/ 0);
         
-        imguiManager.addTexture(&svgFilterResourceManager.getDenoisedOutputImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        // imguiManager.addTexture(&pathTracingResourceManager.getPathTracingOutputImageviews()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        // imguiManager.addTexture(&renderTarget.getOffScreenImageView()[imageIndex], renderTarget.getOffScreenSampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        VkExtent2D contentSize = imguiManager.renderImGuiInterface();
         
         auto shadowcommandBuffer = shadowMapping.recordShadowCommandBuffer(currentFrame);
         auto commandBuffer =  renderPipeline.recordCommandBuffer(currentFrame, renderTarget.getOffScreenFramebuffers()[imageIndex]);
@@ -235,7 +240,8 @@ private:
 
         VkCommandBuffer imguiCommandBuffer =  imguiManager.recordCommandbuffer(currentFrame, renderTarget.getFramebuffers()[imageIndex]);
         
-        std::array<VkCommandBuffer, 6> commandBuffers = {shadowcommandBuffer, pathTracingCommandBuffer, commandBuffer, gbufferCommandBuffer, svgFilterCommandBuffer, imguiCommandBuffer};
+        std::array<VkCommandBuffer, 4> commandBuffers = { pathTracingCommandBuffer, gbufferCommandBuffer, svgFilterCommandBuffer, imguiCommandBuffer };
+        // std::array<VkCommandBuffer, 6> commandBuffers = {shadowcommandBuffer, pathTracingCommandBuffer, commandBuffer, gbufferCommandBuffer, svgFilterCommandBuffer, imguiCommandBuffer};
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -270,15 +276,22 @@ private:
         presentInfo.pImageIndices = &imageIndex;
 
         result = vkQueuePresentKHR(presentQueue, &presentInfo);
-
+        if (imguiManager.getContentExtent().width != imguiManager.getPreContentExtent().width ||
+            imguiManager.getContentExtent().height != imguiManager.getPreContentExtent().height){
+                //延迟一帧更新，等待imgui计算出新的内容大小
+                vkDeviceWaitIdle(device);
+                pathTracingResourceManager.recreatePathTracingOutputImages(contentSize);
+                gbufferResourceManager.recreateGBuffer(contentSize);
+                svgFilterResourceManager.recreateDenoisedOutputImages(contentSize);
+            }
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || windowManager.isFramebufferResized()) {
             windowManager.setFramebufferResized(false);
             swapChainManager.recreateSwapChain();
             renderTarget.recreateRenderTarget();
             imguiManager.recreatWindow();
-            pathTracingResourceManager.recreatePathTracingOutputImages();
-            gbufferResourceManager.recreateGBuffer();
-            svgFilterResourceManager.recreateDenoisedOutputImages();
+            // pathTracingResourceManager.recreatePathTracingOutputImages(swapChainManager.getSwapChainExtent());
+            // gbufferResourceManager.recreateGBuffer();
+            // svgFilterResourceManager.recreateDenoisedOutputImages();
         }
         else if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to present swap chain image!");

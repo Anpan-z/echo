@@ -28,7 +28,12 @@ class GBufferResourceManager
 
     void cleanup();
 
-    void recreateGBuffer();
+    void recreateGBuffer(VkExtent2D imageExtent);
+
+    const VkExtent2D& getOutputExtent() const
+    {
+        return outPutExtent;
+    }
 
     const GBufferAttachment& getColorAttachment(uint32_t index) const
     {
@@ -63,8 +68,7 @@ class GBufferResourceManager
     SwapChainManager* swapChainManager = nullptr;
     VkRenderPass gbufferRenderPass = VK_NULL_HANDLE;
 
-    uint32_t width;
-    uint32_t height;
+    VkExtent2D outPutExtent;
     uint32_t imageCount;
 
     std::vector<GBufferAttachment> positionAttachments; // 世界空间位置

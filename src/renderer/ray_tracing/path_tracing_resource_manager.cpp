@@ -56,7 +56,7 @@ void PathTracingResourceManager::cleanup() {
     }
 }
 
-void PathTracingResourceManager::recreatePathTracingOutputImages() {
+void PathTracingResourceManager::recreatePathTracingOutputImages(VkExtent2D imageExtent) {
     vkDeviceWaitIdle(device);
     for (size_t i = 0; i < storageImages.size(); i++) {
         vkDestroyImageView(device, storageImageViews[i], nullptr);
@@ -68,9 +68,9 @@ void PathTracingResourceManager::recreatePathTracingOutputImages() {
         vkDestroyImage(device, accumulationImages[i], nullptr);
         vkFreeMemory(device, accumulationImageMemories[i], nullptr);
     }
+    outPutExtent = imageExtent; // 更新输出图像的尺寸
     createPathTracingOutputImages();
     createAccumulationImages();
-    outPutExtent = swapChainManager->getSwapChainExtent();
     totalSampleCount = 0;
     for(auto observer : pathTracingResourceReloadObservers){
         observer->onPathTracingOutputImagesRecreated();
@@ -321,7 +321,7 @@ void PathTracingResourceManager::createPathTracingOutputImages(){
     for (size_t i = 0; i < storageImages.size(); i++) {
         VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
         // VkFormat format = swapChainManager->getSwapChainImageFormat();
-        vulkanUtils.createImage(device, physicalDevice, swapChainManager->getSwapChainExtent().width, swapChainManager->getSwapChainExtent().height, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, storageImages[i], storageImageMemories[i]);
+        vulkanUtils.createImage(device, physicalDevice, outPutExtent.width, outPutExtent.height, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, storageImages[i], storageImageMemories[i]);
         vulkanUtils.transitionImageLayout(device, commandManager->getCommandPool(), graphicsQueue, storageImages[i], format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         storageImageViews[i] = vulkanUtils.createImageView(device, storageImages[i], format, VK_IMAGE_ASPECT_COLOR_BIT);
     }
@@ -336,7 +336,7 @@ void PathTracingResourceManager::createAccumulationImages() {
     for (size_t i = 0; i < accumulationImages.size(); i++) {
         VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
         // VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
-        vulkanUtils.createImage(device, physicalDevice, swapChainManager->getSwapChainExtent().width, swapChainManager->getSwapChainExtent().height, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, accumulationImages[i], accumulationImageMemories[i]);
+        vulkanUtils.createImage(device, physicalDevice, outPutExtent.width, outPutExtent.height, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, accumulationImages[i], accumulationImageMemories[i]);
         vulkanUtils.transitionImageLayout(device, commandManager->getCommandPool(), graphicsQueue, accumulationImages[i], format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         accumulationImageViews[i] = vulkanUtils.createImageView(device, accumulationImages[i], format, VK_IMAGE_ASPECT_COLOR_BIT);
     }

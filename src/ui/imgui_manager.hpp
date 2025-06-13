@@ -28,6 +28,10 @@ public:
 
     VkRenderPass getRenderPass() const { return renderPass; }
 
+    VkExtent2D getContentExtent() const { return contentExtent; }
+
+    VkExtent2D getPreContentExtent() const { return preContentExtent; }
+
     void addTexture(const VkImageView* imageView, VkSampler sampler, VkImageLayout imageLayout);
     VkCommandBuffer getCommandBuffer(uint32_t currentFrame) { return commandBuffers[currentFrame]; }
     VkCommandBuffer recordCommandbuffer(uint32_t currentFrame, VkFramebuffer Framebuffer);
@@ -46,6 +50,7 @@ private:
 
     ImTextureID offScreenTextureId;
 
+    VkExtent2D preContentExtent;
     VkExtent2D contentExtent;
     void createDescriptorPool();
     void createRenderPass();
