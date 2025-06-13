@@ -118,7 +118,7 @@ private:
         
         renderPipeline.setup(shadowMapping);
         
-        gbufferPass.init(device, physicalDevice, swapChainManager, vertexResourceManager, gbufferResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
+        gbufferPass.init(device, physicalDevice, swapChainManager, vertexResourceManager, commandManager.allocateCommandBuffers(MAX_FRAMES_IN_FLIGHT));
         gbufferResourceManager.init(device, physicalDevice, gbufferPass.getGBufferRenderPass(), swapChainManager);
 
         svgFilterResourceManager.init(device, physicalDevice, graphicsQueue, swapChainManager, commandManager);
@@ -235,7 +235,7 @@ private:
         auto shadowcommandBuffer = shadowMapping.recordShadowCommandBuffer(currentFrame);
         auto commandBuffer =  renderPipeline.recordCommandBuffer(currentFrame, renderTarget.getOffScreenFramebuffers()[imageIndex], renderTarget.getOffScreenExtent());
         auto pathTracingCommandBuffer = pathTracingPipeline.recordCommandBuffer(currentFrame, imageIndex);
-        auto gbufferCommandBuffer = gbufferPass.recordCommandBuffer(currentFrame, gbufferResourceManager.getFramebuffer(imageIndex));
+        auto gbufferCommandBuffer = gbufferPass.recordCommandBuffer(currentFrame, gbufferResourceManager.getFramebuffer(imageIndex), gbufferResourceManager.getOutputExtent());
         auto svgFilterCommandBuffer = svgFilterPass.recordCommandBuffer(currentFrame, imageIndex);
 
         VkCommandBuffer imguiCommandBuffer =  imguiManager.recordCommandbuffer(currentFrame, renderTarget.getFramebuffers()[imageIndex]);

@@ -7,8 +7,7 @@
 #include <stdexcept>
 
 void GBufferPass::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager,
-                       VertexResourceManager& vertexResourceManager, GBufferResourceManager& gbufferResourceManager,
-                       std::vector<VkCommandBuffer>&& CommandBuffers)
+                       VertexResourceManager& vertexResourceManager, std::vector<VkCommandBuffer>&& CommandBuffers)
 {
     this->device = device;
     this->physicalDevice = physicalDevice;
@@ -16,7 +15,6 @@ void GBufferPass::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapCha
     this->height = swapChainManager.getSwapChainExtent().height;
     this->swapChainManager = &swapChainManager;
     this->vertexResourceManager = &vertexResourceManager;
-    this->gbufferResourceManager = &gbufferResourceManager;
     this->gbufferCommandBuffers = std::move(CommandBuffers);
 
     createRenderPass();
@@ -83,7 +81,7 @@ void GBufferPass::updateUBODescriptorSets()
     }
 }
 
-VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex, VkFramebuffer framebuffer)
+VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex, VkFramebuffer framebuffer, VkExtent2D imageExtent)
 {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -100,7 +98,7 @@ VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex, VkFramebuf
     renderPassInfo.renderPass = gbufferRenderPass; // 使用 GBuffer 的 Render Pass
     renderPassInfo.framebuffer = framebuffer;      // 获取当前帧的 Framebuffer
     renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = gbufferResourceManager->getOutputExtent();
+    renderPassInfo.renderArea.extent = imageExtent;
 
     // 清除值（颜色和深度）
     std::vector<VkClearValue> clearValues(4);
@@ -121,8 +119,8 @@ VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex, VkFramebuf
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast<float>(gbufferResourceManager->getOutputExtent().width);
-    viewport.height = static_cast<float>(gbufferResourceManager->getOutputExtent().height);
+    viewport.width = static_cast<float>(imageExtent.width);
+    viewport.height = static_cast<float>(imageExtent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
@@ -130,7 +128,7 @@ VkCommandBuffer GBufferPass::recordCommandBuffer(uint32_t frameIndex, VkFramebuf
     // 设置裁剪区域
     VkRect2D scissor{};
     scissor.offset = {0, 0};
-    scissor.extent = gbufferResourceManager->getOutputExtent();
+    scissor.extent = imageExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // 绑定顶点和索引缓冲
