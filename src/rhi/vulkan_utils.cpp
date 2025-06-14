@@ -153,6 +153,20 @@ void VulkanUtils::transitionImageLayout(
 
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT; // 源阶段
         destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT; // 目标阶段
+    } else if (oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+        // Image was read by a shader, now will be a transfer source
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+        sourceStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT; // Stage where shader read happened
+        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;                                       // Stage where transfer read will happen
+    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        // Image was a transfer source, now will be read by a shader
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;                                           // Stage where transfer read happened
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT; // Stage where shader read will happen
     }
     else {
         throw std::invalid_argument("unsupported layout transition!");
