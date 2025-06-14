@@ -322,7 +322,7 @@ void PathTracingResourceManager::createPathTracingOutputImages(){
     for (size_t i = 0; i < storageImages.size(); i++) {
         VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
         // VkFormat format = swapChainManager->getSwapChainImageFormat();
-        vulkanUtils.createImage(device, physicalDevice, outPutExtent.width, outPutExtent.height, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, storageImages[i], storageImageMemories[i]);
+        vulkanUtils.createImage(device, physicalDevice, outPutExtent.width, outPutExtent.height, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, storageImages[i], storageImageMemories[i]);
         vulkanUtils.transitionImageLayout(device, commandManager->getCommandPool(), graphicsQueue, storageImages[i], format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         storageImageViews[i] = vulkanUtils.createImageView(device, storageImages[i], format, VK_IMAGE_ASPECT_COLOR_BIT);
     }

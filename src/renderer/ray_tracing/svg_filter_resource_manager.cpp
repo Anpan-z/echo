@@ -75,7 +75,7 @@ void SVGFilterResourceManager::createDenoisedOutputImages()
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance(); // 获取辅助类实例
 
     VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    VkImageUsageFlags usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    VkImageUsageFlags usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     // 如果只是写入，然后直接复制到交换链，可以只有 VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
 
     for (uint32_t i = 0; i < imageCount; ++i)

@@ -1,7 +1,9 @@
 #include "echo.hpp"
+#include "echo_offline.hpp"
 
 int main() {
     ECHO app;
+    // ECHOOFFLINE app;
 
     try {
         app.run();
