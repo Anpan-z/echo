@@ -1,12 +1,15 @@
 #include "render_pipeline.hpp"
-#include "vulkan_utils.hpp"
 #include "vertex.hpp"
-#include <shaderc/shaderc.hpp>
-#include <stdexcept>
+#include "vulkan_utils.hpp"
 #include <array>
+#include <shaderc/shaderc.hpp>
 #include <span>
+#include <stdexcept>
 
-void RenderPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager, VertexResourceManager& vertexResourceManager,TextureResourceManager& textureResourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers) {
+void RenderPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, SwapChainManager& swapChainManager,
+                          VertexResourceManager& vertexResourceManager, TextureResourceManager& textureResourceManager,
+                          std::vector<VkCommandBuffer>&& shadowCommandBuffers)
+{
     this->device = device;
     this->physicalDevice = physicalDevice;
     this->swapChainManager = &swapChainManager;
@@ -19,33 +22,39 @@ void RenderPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, Swap
     createRenderPass();
 }
 
-void RenderPipeline::cleanup() {
-    if (graphicsPipeline != VK_NULL_HANDLE) {
+void RenderPipeline::cleanup()
+{
+    if (graphicsPipeline != VK_NULL_HANDLE)
+    {
         vkDestroyPipeline(device, graphicsPipeline, nullptr);
         graphicsPipeline = VK_NULL_HANDLE;
     }
 
-    if (skyboxPipeline != VK_NULL_HANDLE) {
+    if (skyboxPipeline != VK_NULL_HANDLE)
+    {
         vkDestroyPipeline(device, skyboxPipeline, nullptr);
         skyboxPipeline = VK_NULL_HANDLE;
     }
 
-    if (pipelineLayout != VK_NULL_HANDLE) {
+    if (pipelineLayout != VK_NULL_HANDLE)
+    {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         pipelineLayout = VK_NULL_HANDLE;
     }
-    
-    if (renderPass != VK_NULL_HANDLE) {
+
+    if (renderPass != VK_NULL_HANDLE)
+    {
         vkDestroyRenderPass(device, renderPass, nullptr);
         renderPass = VK_NULL_HANDLE;
     }
-    
+
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     pipelineModelReloadObserver.reset();
 }
 
-void RenderPipeline::setup(ShadowMapping& shadowMapping) {
+void RenderPipeline::setup(ShadowMapping& shadowMapping)
+{
     createDescriptorSetLayout();
     createGraphicsPipeline();
     createSkyboxPipeline();
@@ -55,7 +64,8 @@ void RenderPipeline::setup(ShadowMapping& shadowMapping) {
     createDescriptorSets(MAX_FRAMES_IN_FLIGHT, shadowMapping);
 }
 
-void RenderPipeline::createRenderPass() {
+void RenderPipeline::createRenderPass()
+{
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = swapChainManager->getSwapChainImageFormat();
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -98,8 +108,8 @@ void RenderPipeline::createRenderPass() {
     skyboxSubpass.pColorAttachments = &colorAttachmentRef;
     skyboxSubpass.pDepthStencilAttachment = nullptr;
     // skyboxSubpass.pDepthStencilAttachment = &depthAttachmentRef;
-    
-    std::array<VkSubpassDescription, 2> subpasses = { skyboxSubpass, mainSubpass };
+
+    std::array<VkSubpassDescription, 2> subpasses = {skyboxSubpass, mainSubpass};
 
     VkSubpassDependency dependency{};
     dependency.srcSubpass = 0; // 天空盒子子通道
@@ -111,12 +121,12 @@ void RenderPipeline::createRenderPass() {
     // VkSubpassDependency dependency{};
     // dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     // dependency.dstSubpass = 0;
-    // dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    // dependency.srcAccessMask = 0;
-    // dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    // dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+    // VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; dependency.srcAccessMask = 0; dependency.dstStageMask =
+    // VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     // dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-    std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
@@ -126,12 +136,14 @@ void RenderPipeline::createRenderPass() {
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &dependency;
 
-    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
+    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create render pass!");
     }
 }
 
-void RenderPipeline::createDescriptorSetLayout() {
+void RenderPipeline::createDescriptorSetLayout()
+{
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorCount = 1;
@@ -139,12 +151,12 @@ void RenderPipeline::createDescriptorSetLayout() {
     uboLayoutBinding.pImmutableSamplers = nullptr;
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-    //VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-    //samplerLayoutBinding.binding = 1;
-    //samplerLayoutBinding.descriptorCount = 1;
-    //samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    //samplerLayoutBinding.pImmutableSamplers = nullptr;
-    //samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    // VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    // samplerLayoutBinding.binding = 1;
+    // samplerLayoutBinding.descriptorCount = 1;
+    // samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    // samplerLayoutBinding.pImmutableSamplers = nullptr;
+    // samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     VkDescriptorSetLayoutBinding shadowMapBinding{};
     shadowMapBinding.binding = 1;
@@ -188,20 +200,22 @@ void RenderPipeline::createDescriptorSetLayout() {
     brdfLUBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     brdfLUBinding.pImmutableSamplers = nullptr;
 
-
-    std::array<VkDescriptorSetLayoutBinding, 7> bindings = { uboLayoutBinding, shadowMapBinding, materialBinding, skyBoxBinding,
-                                                            irradianceMapBinding, prefilteredMapBinding, brdfLUBinding };   
+    std::array<VkDescriptorSetLayoutBinding, 7> bindings = {
+        uboLayoutBinding,     shadowMapBinding,      materialBinding, skyBoxBinding,
+        irradianceMapBinding, prefilteredMapBinding, brdfLUBinding};
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
     layoutInfo.pBindings = bindings.data();
 
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create descriptor set layout!");
     }
 }
 
-void RenderPipeline::createGraphicsPipeline() {
+void RenderPipeline::createGraphicsPipeline()
+{
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
 
     std::string vertex_shader_code_path = "../shader/shader.vert";
@@ -209,40 +223,40 @@ void RenderPipeline::createGraphicsPipeline() {
 
     std::string vs = vulkanUtils.readFileToString(vertex_shader_code_path);
     shaderc::Compiler compiler;
-    //编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
+    // 编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
     auto vertResult = compiler.CompileGlslToSpv(vs, shaderc_glsl_vertex_shader, vertex_shader_code_path.c_str());
     auto errorInfo_vert = vertResult.GetErrorMessage();
-    if (!errorInfo_vert.empty()) {
+    if (!errorInfo_vert.empty())
+    {
         throw std::runtime_error("Vertex shader compilation error: " + errorInfo_vert);
     }
-    //可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
+    // 可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
 
-    std::span<const uint32_t> vert_spv = { vertResult.begin(), size_t(vertResult.end() - vertResult.begin()) * 4 };
-    VkShaderModuleCreateInfo vsmoduleCreateInfo;// 准备顶点着色器模块创建信息
+    std::span<const uint32_t> vert_spv = {vertResult.begin(), size_t(vertResult.end() - vertResult.begin()) * 4};
+    VkShaderModuleCreateInfo vsmoduleCreateInfo; // 准备顶点着色器模块创建信息
     vsmoduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    vsmoduleCreateInfo.pNext = nullptr;// 自定义数据的指针
+    vsmoduleCreateInfo.pNext = nullptr; // 自定义数据的指针
     vsmoduleCreateInfo.flags = 0;
-    vsmoduleCreateInfo.codeSize = vert_spv.size();// 顶点着色器SPV数据总字节数
-    vsmoduleCreateInfo.pCode = vert_spv.data(); // 顶点着色器SPV数据
-    
+    vsmoduleCreateInfo.codeSize = vert_spv.size(); // 顶点着色器SPV数据总字节数
+    vsmoduleCreateInfo.pCode = vert_spv.data();    // 顶点着色器SPV数据
+
     std::string fs = vulkanUtils.readFileToString(fragment_shader_code_path);
     auto fragResult = compiler.CompileGlslToSpv(fs, shaderc_glsl_fragment_shader, fragment_shader_code_path.c_str());
     auto errorInfo_frag = fragResult.GetErrorMessage();
-    if (!errorInfo_frag.empty()) {
+    if (!errorInfo_frag.empty())
+    {
         throw std::runtime_error("Fragment shader compilation error: " + errorInfo_frag);
     }
-    //可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
-    std::span<const uint32_t> frag_spv = { fragResult.begin(), size_t(fragResult.end() - fragResult.begin()) * 4 };
-    VkShaderModuleCreateInfo fsmoduleCreateInfo;// 准备顶点着色器模块创建信息
+    // 可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
+    std::span<const uint32_t> frag_spv = {fragResult.begin(), size_t(fragResult.end() - fragResult.begin()) * 4};
+    VkShaderModuleCreateInfo fsmoduleCreateInfo; // 准备顶点着色器模块创建信息
     fsmoduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    fsmoduleCreateInfo.pNext = nullptr;// 自定义数据的指针
+    fsmoduleCreateInfo.pNext = nullptr; // 自定义数据的指针
     fsmoduleCreateInfo.flags = 0;
-    fsmoduleCreateInfo.codeSize = frag_spv.size();// 顶点着色器SPV数据总字节数
-    fsmoduleCreateInfo.pCode = frag_spv.data(); // 顶点着色器SPV数据
-    //auto vertShaderCode = readFile("shaders/vert.spv");
-    //auto fragShaderCode = readFile("shaders/frag.spv");
-
-
+    fsmoduleCreateInfo.codeSize = frag_spv.size(); // 顶点着色器SPV数据总字节数
+    fsmoduleCreateInfo.pCode = frag_spv.data();    // 顶点着色器SPV数据
+    // auto vertShaderCode = readFile("shaders/vert.spv");
+    // auto fragShaderCode = readFile("shaders/frag.spv");
 
     auto vertShaderModule = vulkanUtils.createShaderModule(device, vsmoduleCreateInfo);
     auto fragShaderModule = vulkanUtils.createShaderModule(device, fsmoduleCreateInfo);
@@ -259,7 +273,7 @@ void RenderPipeline::createGraphicsPipeline() {
     fragShaderStageInfo.module = fragShaderModule;
     fragShaderStageInfo.pName = "main";
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -288,8 +302,8 @@ void RenderPipeline::createGraphicsPipeline() {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_NONE; // 启用双面绘制，不剔除背面
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;//顺时针为正面
+    rasterizer.cullMode = VK_CULL_MODE_NONE;                // 启用双面绘制，不剔除背面
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // 顺时针为正面
     rasterizer.depthBiasEnable = VK_FALSE;
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
@@ -306,7 +320,8 @@ void RenderPipeline::createGraphicsPipeline() {
     depthStencil.stencilTestEnable = VK_FALSE;
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachment.blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
@@ -334,7 +349,8 @@ void RenderPipeline::createGraphicsPipeline() {
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
 
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create pipeline layout!");
     }
 
@@ -347,7 +363,7 @@ void RenderPipeline::createGraphicsPipeline() {
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pDepthStencilState = &depthStencil;//启用深度测试
+    pipelineInfo.pDepthStencilState = &depthStencil; // 启用深度测试
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
@@ -355,7 +371,8 @@ void RenderPipeline::createGraphicsPipeline() {
     pipelineInfo.subpass = 1;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create graphics pipeline!");
     }
 
@@ -363,12 +380,15 @@ void RenderPipeline::createGraphicsPipeline() {
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
 }
 
-VkCommandBuffer RenderPipeline::recordCommandBuffer(uint32_t imageIndex, VkFramebuffer swapChainFramebuffers, VkExtent2D imageExtent) {
+VkCommandBuffer RenderPipeline::recordCommandBuffer(uint32_t imageIndex, VkFramebuffer swapChainFramebuffers,
+                                                    VkExtent2D imageExtent)
+{
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
     VkCommandBuffer commandBuffer = commandBuffers[imageIndex];
-    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to begin recording command buffer!");
     }
 
@@ -376,12 +396,12 @@ VkCommandBuffer RenderPipeline::recordCommandBuffer(uint32_t imageIndex, VkFrame
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = renderPass;
     renderPassInfo.framebuffer = swapChainFramebuffers;
-    renderPassInfo.renderArea.offset = { 0, 0 };
+    renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = imageExtent;
 
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = { {0.0f, 0.0f, 0.0f, 1.0f} };
-    clearValues[1].depthStencil = { 1.0f, 0 };
+    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[1].depthStencil = {1.0f, 0};
 
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
@@ -401,13 +421,14 @@ VkCommandBuffer RenderPipeline::recordCommandBuffer(uint32_t imageIndex, VkFrame
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
     VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
+    scissor.offset = {0, 0};
     scissor.extent = imageExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-    
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[imageIndex], 0, nullptr);
 
-    VkBuffer skyBoxVertexBuffers[] = { vertexResourceManager->getSkyBoxVertexBuffer() };
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
+                            &descriptorSets[imageIndex], 0, nullptr);
+
+    VkBuffer skyBoxVertexBuffers[] = {vertexResourceManager->getSkyBoxVertexBuffer()};
     VkDeviceSize offsets_skybox[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, skyBoxVertexBuffers, offsets_skybox);
 
@@ -420,26 +441,29 @@ VkCommandBuffer RenderPipeline::recordCommandBuffer(uint32_t imageIndex, VkFrame
 
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-    VkBuffer vertexBuffers[] = { vertexResourceManager->getVertexBuffer() };
-    VkDeviceSize offsets[] = { 0 };
+    VkBuffer vertexBuffers[] = {vertexResourceManager->getVertexBuffer()};
+    VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
     vkCmdBindIndexBuffer(commandBuffer, vertexResourceManager->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[imageIndex], 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
+                            &descriptorSets[imageIndex], 0, nullptr);
 
     vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(vertexResourceManager->getIndices().size()), 1, 0, 0, 0);
-    //vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    // vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
 
-    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to record command buffer!");
     }
     return commandBuffer;
 }
 
-void RenderPipeline::createDescriptorPool(size_t MAX_FRAMES_IN_FLIGHT) {
+void RenderPipeline::createDescriptorPool(size_t MAX_FRAMES_IN_FLIGHT)
+{
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2 + 3 * 2;
@@ -452,12 +476,14 @@ void RenderPipeline::createDescriptorPool(size_t MAX_FRAMES_IN_FLIGHT) {
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 2 + 3 * 2;
 
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create descriptor pool!");
     }
 }
 
-void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMapping& shadowMapping) {
+void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMapping& shadowMapping)
+{
     std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -466,11 +492,13 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
     allocInfo.pSetLayouts = layouts.data();
 
     descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-    if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+    if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = vertexResourceManager->getUniformBuffers()[i];
         bufferInfo.offset = 0;
@@ -480,10 +508,10 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
         materialBufferInfo.buffer = vertexResourceManager->getMaterialUniformBuffers()[i];
         materialBufferInfo.offset = 0;
         materialBufferInfo.range = sizeof(MaterialUniformBufferObject) * vertexResourceManager->getShapeNames().size();
-        //VkDescriptorImageInfo imageInfo{};
-        //imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        //imageInfo.imageView = textureImageView;
-        //imageInfo.sampler = textureSampler;
+        // VkDescriptorImageInfo imageInfo{};
+        // imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        // imageInfo.imageView = textureImageView;
+        // imageInfo.sampler = textureSampler;
 
         VkDescriptorImageInfo shadowImageInfo{};
         shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
@@ -499,17 +527,17 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
         irradianceMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         irradianceMapInfo.imageView = textureResourceManager->getIrradianceMapImageView();
         irradianceMapInfo.sampler = textureResourceManager->getIrradianceMapSampler();
-        
+
         VkDescriptorImageInfo prefilteredMapInfo{};
         prefilteredMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         prefilteredMapInfo.imageView = textureResourceManager->getPrefilteredMapImageView();
         prefilteredMapInfo.sampler = textureResourceManager->getPrefilteredMapSampler();
-        
+
         VkDescriptorImageInfo brdfLUTInfo{};
         brdfLUTInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         brdfLUTInfo.imageView = textureResourceManager->getBRDFLUTImageView();
         brdfLUTInfo.sampler = textureResourceManager->getBRDFLUTSampler();
-        
+
         std::array<VkWriteDescriptorSet, 7> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -543,7 +571,7 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
         descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[3].descriptorCount = 1;
         descriptorWrites[3].pImageInfo = &skyBoxImageInfo;
-        
+
         descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[4].dstSet = descriptorSets[i];
         descriptorWrites[4].dstBinding = 4;
@@ -568,13 +596,15 @@ void RenderPipeline::createDescriptorSets(size_t MAX_FRAMES_IN_FLIGHT, ShadowMap
         descriptorWrites[6].descriptorCount = 1;
         descriptorWrites[6].pImageInfo = &brdfLUTInfo;
 
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0,
+                               nullptr);
     }
 }
 
-
-void RenderPipeline::updateMaterialDescriptorSets() {
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+void RenderPipeline::updateMaterialDescriptorSets()
+{
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = vertexResourceManager->getUniformBuffers()[i];
         bufferInfo.offset = 0;
@@ -603,11 +633,13 @@ void RenderPipeline::updateMaterialDescriptorSets() {
         descriptorWrites[1].descriptorCount = 1;
         descriptorWrites[1].pBufferInfo = &materialBufferInfo;
 
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0,
+                               nullptr);
     }
 }
 
-void RenderPipeline::createSkyboxPipeline() {
+void RenderPipeline::createSkyboxPipeline()
+{
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
 
     std::string vertex_shader_code_path = "../shader/skybox.vert";
@@ -615,40 +647,40 @@ void RenderPipeline::createSkyboxPipeline() {
 
     std::string vs = vulkanUtils.readFileToString(vertex_shader_code_path);
     shaderc::Compiler compiler;
-    //编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
+    // 编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
     auto vertResult = compiler.CompileGlslToSpv(vs, shaderc_glsl_vertex_shader, vertex_shader_code_path.c_str());
     auto errorInfo_vert = vertResult.GetErrorMessage();
-    if (!errorInfo_vert.empty()) {
+    if (!errorInfo_vert.empty())
+    {
         throw std::runtime_error("Vertex shader compilation error: " + errorInfo_vert);
     }
-    //可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
+    // 可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
 
-    std::span<const uint32_t> vert_spv = { vertResult.begin(), size_t(vertResult.end() - vertResult.begin()) * 4 };
-    VkShaderModuleCreateInfo vsmoduleCreateInfo;// 准备顶点着色器模块创建信息
+    std::span<const uint32_t> vert_spv = {vertResult.begin(), size_t(vertResult.end() - vertResult.begin()) * 4};
+    VkShaderModuleCreateInfo vsmoduleCreateInfo; // 准备顶点着色器模块创建信息
     vsmoduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    vsmoduleCreateInfo.pNext = nullptr;// 自定义数据的指针
+    vsmoduleCreateInfo.pNext = nullptr; // 自定义数据的指针
     vsmoduleCreateInfo.flags = 0;
-    vsmoduleCreateInfo.codeSize = vert_spv.size();// 顶点着色器SPV数据总字节数
-    vsmoduleCreateInfo.pCode = vert_spv.data(); // 顶点着色器SPV数据
-    
+    vsmoduleCreateInfo.codeSize = vert_spv.size(); // 顶点着色器SPV数据总字节数
+    vsmoduleCreateInfo.pCode = vert_spv.data();    // 顶点着色器SPV数据
+
     std::string fs = vulkanUtils.readFileToString(fragment_shader_code_path);
     auto fragResult = compiler.CompileGlslToSpv(fs, shaderc_glsl_fragment_shader, fragment_shader_code_path.c_str());
     auto errorInfo_frag = fragResult.GetErrorMessage();
-    if (!errorInfo_frag.empty()) {
+    if (!errorInfo_frag.empty())
+    {
         throw std::runtime_error("Fragment shader compilation error: " + errorInfo_frag);
     }
-    //可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
-    std::span<const uint32_t> frag_spv = { fragResult.begin(), size_t(fragResult.end() - fragResult.begin()) * 4 };
-    VkShaderModuleCreateInfo fsmoduleCreateInfo;// 准备顶点着色器模块创建信息
+    // 可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
+    std::span<const uint32_t> frag_spv = {fragResult.begin(), size_t(fragResult.end() - fragResult.begin()) * 4};
+    VkShaderModuleCreateInfo fsmoduleCreateInfo; // 准备顶点着色器模块创建信息
     fsmoduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    fsmoduleCreateInfo.pNext = nullptr;// 自定义数据的指针
+    fsmoduleCreateInfo.pNext = nullptr; // 自定义数据的指针
     fsmoduleCreateInfo.flags = 0;
-    fsmoduleCreateInfo.codeSize = frag_spv.size();// 顶点着色器SPV数据总字节数
-    fsmoduleCreateInfo.pCode = frag_spv.data(); // 顶点着色器SPV数据
-    //auto vertShaderCode = readFile("shaders/vert.spv");
-    //auto fragShaderCode = readFile("shaders/frag.spv");
-
-
+    fsmoduleCreateInfo.codeSize = frag_spv.size(); // 顶点着色器SPV数据总字节数
+    fsmoduleCreateInfo.pCode = frag_spv.data();    // 顶点着色器SPV数据
+    // auto vertShaderCode = readFile("shaders/vert.spv");
+    // auto fragShaderCode = readFile("shaders/frag.spv");
 
     auto vertShaderModule = vulkanUtils.createShaderModule(device, vsmoduleCreateInfo);
     auto fragShaderModule = vulkanUtils.createShaderModule(device, fsmoduleCreateInfo);
@@ -665,7 +697,7 @@ void RenderPipeline::createSkyboxPipeline() {
     fragShaderStageInfo.module = fragShaderModule;
     fragShaderStageInfo.pName = "main";
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
     // 顶点输入
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -687,7 +719,7 @@ void RenderPipeline::createSkyboxPipeline() {
     // 光栅化
     VkPipelineRasterizationStateCreateInfo rasterizer{};
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    // rasterizer.cullMode = VK_CULL_MODE_NONE; 
+    // rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT; // 剔除正面
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     // rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; //顺时针为正面
@@ -701,13 +733,14 @@ void RenderPipeline::createSkyboxPipeline() {
     // 深度测试
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE; // 启用深度测试
+    depthStencil.depthTestEnable = VK_TRUE;   // 启用深度测试
     depthStencil.depthWriteEnable = VK_FALSE; // 不写入深度缓冲
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 
     // 颜色混合
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -719,7 +752,6 @@ void RenderPipeline::createSkyboxPipeline() {
     colorBlending.blendConstants[1] = 0.0f;
     colorBlending.blendConstants[2] = 0.0f;
     colorBlending.blendConstants[3] = 0.0f;
-
 
     std::vector<VkDynamicState> dynamicStates = {
         VK_DYNAMIC_STATE_VIEWPORT,
@@ -736,7 +768,7 @@ void RenderPipeline::createSkyboxPipeline() {
     // viewport.height = static_cast<float>(swapChainManager->getSwapChainExtent().height);
     // viewport.minDepth = 0.0f;
     // viewport.maxDepth = 1.0f;
-    
+
     // VkRect2D scissor{};
     // scissor.offset = {0, 0};
     // scissor.extent = swapChainManager->getSwapChainExtent();
@@ -766,7 +798,7 @@ void RenderPipeline::createSkyboxPipeline() {
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pDepthStencilState = &depthStencil;//启用深度测试
+    pipelineInfo.pDepthStencilState = &depthStencil; // 启用深度测试
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
@@ -774,7 +806,8 @@ void RenderPipeline::createSkyboxPipeline() {
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &skyboxPipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &skyboxPipeline) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create graphics pipeline!");
     }
 

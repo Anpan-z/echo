@@ -1,24 +1,27 @@
 #pragma once
-#ifndef GLM_FORCE_DEPTH_ZERO_TO_ONE  
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE  
-#endif  
+#ifndef GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#endif
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 // 方向枚举，处理键盘输入
-enum class CameraMovement {
+enum class CameraMovement
+{
     FORWARD,
     BACKWARD,
     LEFT,
     RIGHT,
-    UP,    
-    DOWN   
+    UP,
+    DOWN
 };
 
-class Camera {
-public:
+class Camera
+{
+  public:
     // Camera(glm::vec3 position, glm::vec3 up, float yaw, float pitch);
-    void init() {
+    void init()
+    {
         position = glm::vec3(0.0f, 1.0f, 5.0f);
         worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
         yaw = -90.0f;
@@ -30,10 +33,16 @@ public:
     void processKeyboard(CameraMovement direction, float deltaTime);
     void processMouseMovement(float xoffset, float yoffset, bool constrainPitch = true);
 
-    glm::vec3 getPosition() const { return position; }
-    glm::vec3 getFront() const { return front; }
+    glm::vec3 getPosition() const
+    {
+        return position;
+    }
+    glm::vec3 getFront() const
+    {
+        return front;
+    }
 
-private:
+  private:
     void updateCameraVectors();
 
     // Camera Attributes

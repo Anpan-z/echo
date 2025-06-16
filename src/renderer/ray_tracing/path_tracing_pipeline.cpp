@@ -2,12 +2,15 @@
 #include "path_tracing_pipeline.hpp"
 #include "vulkan_utils.hpp"
 #include <fstream>
-#include <vector>
-#include <stdexcept>
-#include <span>
 #include <shaderc/shaderc.hpp>
+#include <span>
+#include <stdexcept>
+#include <vector>
 
-void PathTracingPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, PathTracingResourceManager& pathTracingResourceManager, std::vector<VkCommandBuffer>&& commandBuffers) {
+void PathTracingPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice,
+                               PathTracingResourceManager& pathTracingResourceManager,
+                               std::vector<VkCommandBuffer>&& commandBuffers)
+{
     this->device = device;
     this->physicalDevice = physicalDevice;
     this->pathTracingResourceManager = &pathTracingResourceManager;
@@ -22,26 +25,34 @@ void PathTracingPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice,
     pathTracingResourceManager.addPathTracingResourceReloadObserver(pathTracingPipelineObserver.get());
 }
 
-void PathTracingPipeline::cleanup() {
-    if (pathTracingPipeline != VK_NULL_HANDLE) {
+void PathTracingPipeline::cleanup()
+{
+    if (pathTracingPipeline != VK_NULL_HANDLE)
+    {
         vkDestroyPipeline(device, pathTracingPipeline, nullptr);
     }
-    if (pathTracingPipelineLayout != VK_NULL_HANDLE) {
+    if (pathTracingPipelineLayout != VK_NULL_HANDLE)
+    {
         vkDestroyPipelineLayout(device, pathTracingPipelineLayout, nullptr);
     }
-    if (imageDescriptorSetLayout != VK_NULL_HANDLE) {
+    if (imageDescriptorSetLayout != VK_NULL_HANDLE)
+    {
         vkDestroyDescriptorSetLayout(device, imageDescriptorSetLayout, nullptr);
     }
-    if (frameDescriptorSetLayout != VK_NULL_HANDLE) {
+    if (frameDescriptorSetLayout != VK_NULL_HANDLE)
+    {
         vkDestroyDescriptorSetLayout(device, frameDescriptorSetLayout, nullptr);
     }
-    if (descriptorPool != VK_NULL_HANDLE) {
+    if (descriptorPool != VK_NULL_HANDLE)
+    {
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     }
 }
 
-void PathTracingPipeline::updateOutputImageDescriptorSet() {
-    for (size_t i = 0; i < pathTracingResourceManager->getPathTracingOutputImages().size(); i++) {
+void PathTracingPipeline::updateOutputImageDescriptorSet()
+{
+    for (size_t i = 0; i < pathTracingResourceManager->getPathTracingOutputImages().size(); i++)
+    {
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
         imageInfo.imageView = pathTracingResourceManager->getPathTracingOutputImageviews()[i];
@@ -71,12 +82,15 @@ void PathTracingPipeline::updateOutputImageDescriptorSet() {
         accumulationImageWrite.pImageInfo = &accumulationImageInfo;
 
         std::vector<VkWriteDescriptorSet> descriptorWrites = {outputimageWrite, accumulationImageWrite};
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0,
+                               nullptr);
     }
 }
 
-void PathTracingPipeline::updateStorageBufferDescriptorSet() {
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+void PathTracingPipeline::updateStorageBufferDescriptorSet()
+{
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
         VkDescriptorBufferInfo trianglesBufferInfo{};
         trianglesBufferInfo.buffer = pathTracingResourceManager->getTriangleStorageBuffer();
         trianglesBufferInfo.offset = 0;
@@ -85,12 +99,13 @@ void PathTracingPipeline::updateStorageBufferDescriptorSet() {
         VkDescriptorBufferInfo bvhBufferInfo{};
         bvhBufferInfo.buffer = pathTracingResourceManager->getBVHStorageBuffer();
         bvhBufferInfo.offset = 0;
-        bvhBufferInfo.range = VK_WHOLE_SIZE;    
+        bvhBufferInfo.range = VK_WHOLE_SIZE;
 
         VkDescriptorBufferInfo materialBufferInfo{};
         materialBufferInfo.buffer = pathTracingResourceManager->getMaterialUniformBuffers()[i];
         materialBufferInfo.offset = 0;
-        materialBufferInfo.range = sizeof(MaterialUniformBufferObject) * pathTracingResourceManager->getShapeNames().size();
+        materialBufferInfo.range =
+            sizeof(MaterialUniformBufferObject) * pathTracingResourceManager->getShapeNames().size();
 
         VkDescriptorBufferInfo emissiveTrianglesBufferInfo{};
         emissiveTrianglesBufferInfo.buffer = pathTracingResourceManager->getEmissiveTrianglesBuffer();
@@ -133,20 +148,24 @@ void PathTracingPipeline::updateStorageBufferDescriptorSet() {
         emissiveTrianglesWrite.descriptorCount = 1;
         emissiveTrianglesWrite.pBufferInfo = &emissiveTrianglesBufferInfo;
 
-        std::vector<VkWriteDescriptorSet> descriptorWrites = { trianglesWrite, bvhBufferWrite, materialsWrite, emissiveTrianglesWrite };
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        std::vector<VkWriteDescriptorSet> descriptorWrites = {trianglesWrite, bvhBufferWrite, materialsWrite,
+                                                              emissiveTrianglesWrite};
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0,
+                               nullptr);
     }
 }
 
-VkCommandBuffer PathTracingPipeline::recordCommandBuffer(uint32_t frameIndex, uint32_t imageIndex) {
+VkCommandBuffer PathTracingPipeline::recordCommandBuffer(uint32_t frameIndex, uint32_t imageIndex)
+{
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
     VkCommandBuffer commandBuffer = pathTracingCommandBuffers[frameIndex];
-    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to begin recording command buffer!");
     }
-    
+
     // 添加布局转换：从 SHADER_READ_ONLY_OPTIMAL 到 GENERAL
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -161,54 +180,30 @@ VkCommandBuffer PathTracingPipeline::recordCommandBuffer(uint32_t frameIndex, ui
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
 
-    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT; // 着色器读取
+    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;  // 着色器读取
     barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT; // 计算着色器写入
 
     // barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT; // 着色器读取
     // barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT|VK_ACCESS_SHADER_READ_BIT; // 计算着色器写入
 
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // 源阶段
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // 目标阶段
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier
-    );
+    vkCmdPipelineBarrier(commandBuffer,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // 源阶段
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  // 目标阶段
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
     barrier.image = pathTracingResourceManager->getAccumulationImages()[imageIndex];
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // 源阶段
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // 目标阶段
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier
-    );
-    
+    vkCmdPipelineBarrier(commandBuffer,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // 源阶段
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  // 目标阶段
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pathTracingPipeline);
 
-    vkCmdBindDescriptorSets(
-        commandBuffer,
-        VK_PIPELINE_BIND_POINT_COMPUTE,
-        pathTracingPipelineLayout,
-        0, // Set 0
-        1,
-        &imageDescriptorSets[imageIndex],
-        0,
-        nullptr
-    );
-    vkCmdBindDescriptorSets(
-        commandBuffer,
-        VK_PIPELINE_BIND_POINT_COMPUTE,
-        pathTracingPipelineLayout,
-        1, // Set 1
-        1,
-        &frameDescriptorSets[frameIndex],
-        0,
-        nullptr
-    );
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pathTracingPipelineLayout,
+                            0, // Set 0
+                            1, &imageDescriptorSets[imageIndex], 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pathTracingPipelineLayout,
+                            1, // Set 1
+                            1, &frameDescriptorSets[frameIndex], 0, nullptr);
 
     // 假设你根据输出图像尺寸来决定工作组数：
     VkExtent2D imageExtent = pathTracingResourceManager->getOutputExtent();
@@ -236,57 +231,49 @@ VkCommandBuffer PathTracingPipeline::recordCommandBuffer(uint32_t frameIndex, ui
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT; // 计算着色器写入
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;  // 着色器读取
 
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // 源阶段
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // 目标阶段
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier
-    );
+    vkCmdPipelineBarrier(commandBuffer,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  // 源阶段
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // 目标阶段
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
     barrier.image = pathTracingResourceManager->getAccumulationImages()[imageIndex];
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // 源阶段
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // 目标阶段
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier
-    );
+    vkCmdPipelineBarrier(commandBuffer,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // 源阶段
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  // 目标阶段
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
 
-    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to record command buffer!");
     }
 
     return commandBuffer;
 }
 
-
-void PathTracingPipeline::createPathTracingPipeline() {
+void PathTracingPipeline::createPathTracingPipeline()
+{
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
     std::string compute_shader_code_path = "../shader/pathtracer_cook_torrance_mis.comp";
     // std::string compute_shader_code_path = "../shader/pathTracer_lambertian.comp";
 
     std::string cs = vulkanUtils.readFileToString(compute_shader_code_path);
     shaderc::Compiler compiler;
-    //编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
+    // 编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
     auto computeResult = compiler.CompileGlslToSpv(cs, shaderc_glsl_compute_shader, compute_shader_code_path.c_str());
     auto errorInfo_vert = computeResult.GetErrorMessage();
-    if (!errorInfo_vert.empty()) {
+    if (!errorInfo_vert.empty())
+    {
         throw std::runtime_error("Vertex shader compilation error: " + errorInfo_vert);
     }
-    //可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
+    // 可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
 
-    std::span<const uint32_t> compute_spv = { computeResult.begin(), size_t(computeResult.end() - computeResult.begin()) * 4 };
-    VkShaderModuleCreateInfo csmoduleCreateInfo;// 准备顶点着色器模块创建信息
+    std::span<const uint32_t> compute_spv = {computeResult.begin(),
+                                             size_t(computeResult.end() - computeResult.begin()) * 4};
+    VkShaderModuleCreateInfo csmoduleCreateInfo; // 准备顶点着色器模块创建信息
     csmoduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    csmoduleCreateInfo.pNext = nullptr;// 自定义数据的指针
+    csmoduleCreateInfo.pNext = nullptr; // 自定义数据的指针
     csmoduleCreateInfo.flags = 0;
-    csmoduleCreateInfo.codeSize = compute_spv.size();// 顶点着色器SPV数据总字节数
-    csmoduleCreateInfo.pCode = compute_spv.data(); // 顶点着色器SPV数据
-
+    csmoduleCreateInfo.codeSize = compute_spv.size(); // 顶点着色器SPV数据总字节数
+    csmoduleCreateInfo.pCode = compute_spv.data();    // 顶点着色器SPV数据
 
     auto computeShaderModule = vulkanUtils.createShaderModule(device, csmoduleCreateInfo);
 
@@ -296,14 +283,15 @@ void PathTracingPipeline::createPathTracingPipeline() {
     shaderStageInfo.module = computeShaderModule;
     shaderStageInfo.pName = "main";
 
-    std::vector<VkDescriptorSetLayout> descriptorSetLayout = { imageDescriptorSetLayout, frameDescriptorSetLayout };
+    std::vector<VkDescriptorSetLayout> descriptorSetLayout = {imageDescriptorSetLayout, frameDescriptorSetLayout};
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayout.size());
     pipelineLayoutInfo.pSetLayouts = descriptorSetLayout.data();
 
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pathTracingPipelineLayout) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pathTracingPipelineLayout) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create compute pipeline layout");
     }
 
@@ -312,37 +300,40 @@ void PathTracingPipeline::createPathTracingPipeline() {
     pipelineInfo.stage = shaderStageInfo;
     pipelineInfo.layout = pathTracingPipelineLayout;
 
-    if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pathTracingPipeline) != VK_SUCCESS) {
+    if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pathTracingPipeline) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create compute pipeline");
     }
 
     vkDestroyShaderModule(device, computeShaderModule, nullptr);
 }
 
-void PathTracingPipeline::createDescriptorSetLayout() {
+void PathTracingPipeline::createDescriptorSetLayout()
+{
     // Triangles 缓冲区绑定
     VkDescriptorSetLayoutBinding storageImageBinding{};
-    storageImageBinding.binding = 0; 
+    storageImageBinding.binding = 0;
     storageImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; // 存储图像
     storageImageBinding.descriptorCount = 1;
     storageImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT; // 仅在计算着色器中使用
-    storageImageBinding.pImmutableSamplers = nullptr; // 不使用采样器
+    storageImageBinding.pImmutableSamplers = nullptr;             // 不使用采样器
 
     VkDescriptorSetLayoutBinding accumulationImagesBinding{};
     accumulationImagesBinding.binding = 1;
     accumulationImagesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; // 存储图像
     accumulationImagesBinding.descriptorCount = 1;
     accumulationImagesBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT; // 仅在计算着色器中使用
-    accumulationImagesBinding.pImmutableSamplers = nullptr; // 不使用采样器
+    accumulationImagesBinding.pImmutableSamplers = nullptr;             // 不使用采样器
 
     std::array<VkDescriptorSetLayoutBinding, 2> imageBindings = {storageImageBinding, accumulationImagesBinding};
-    
+
     VkDescriptorSetLayoutCreateInfo set0LayoutInfo{};
     set0LayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     set0LayoutInfo.bindingCount = static_cast<uint32_t>(imageBindings.size());
     set0LayoutInfo.pBindings = imageBindings.data();
 
-    if (vkCreateDescriptorSetLayout(device, &set0LayoutInfo, nullptr, &imageDescriptorSetLayout) != VK_SUCCESS) {
+    if (vkCreateDescriptorSetLayout(device, &set0LayoutInfo, nullptr, &imageDescriptorSetLayout) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create descriptor set layout for set 0!");
     }
 
@@ -360,7 +351,7 @@ void PathTracingPipeline::createDescriptorSetLayout() {
     bvhBufferBinding.descriptorCount = 1;
     bvhBufferBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     bvhBufferBinding.pImmutableSamplers = nullptr;
-    
+
     // Materials 缓冲区绑定
     VkDescriptorSetLayoutBinding materialBinding{};
     materialBinding.binding = 2;
@@ -382,19 +373,22 @@ void PathTracingPipeline::createDescriptorSetLayout() {
     emissiveTrianglesBinding.descriptorCount = 1;
     emissiveTrianglesBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     emissiveTrianglesBinding.pImmutableSamplers = nullptr;
-    
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings = {triangleBinding, bvhBufferBinding, materialBinding, cameraDataBinding, emissiveTrianglesBinding};   
+
+    std::array<VkDescriptorSetLayoutBinding, 5> bindings = {triangleBinding, bvhBufferBinding, materialBinding,
+                                                            cameraDataBinding, emissiveTrianglesBinding};
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
     layoutInfo.pBindings = bindings.data();
 
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &frameDescriptorSetLayout) != VK_SUCCESS) {
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &frameDescriptorSetLayout) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create descriptor set layout!");
     }
 }
 
-void PathTracingPipeline::createDescriptorPool() {
+void PathTracingPipeline::createDescriptorPool()
+{
     int imageCount = pathTracingResourceManager->getPathTracingOutputImages().size();
     int frameCount = MAX_FRAMES_IN_FLIGHT;
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
@@ -414,12 +408,14 @@ void PathTracingPipeline::createDescriptorPool() {
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = imageCount + frameCount;
 
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create descriptor pool!");
     }
 }
 
-void PathTracingPipeline::createDescriptorSets() {
+void PathTracingPipeline::createDescriptorSets()
+{
     int imageCount = pathTracingResourceManager->getPathTracingOutputImages().size();
     int frameCount = MAX_FRAMES_IN_FLIGHT;
     std::vector<VkDescriptorSetLayout> layoutsSet0(imageCount, imageDescriptorSetLayout);
@@ -427,28 +423,33 @@ void PathTracingPipeline::createDescriptorSets() {
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(imageCount);;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(imageCount);
+    ;
     allocInfo.pSetLayouts = layoutsSet0.data();
 
     imageDescriptorSets.resize(imageCount);
-    if (vkAllocateDescriptorSets(device, &allocInfo, imageDescriptorSets.data()) != VK_SUCCESS) {
+    if (vkAllocateDescriptorSets(device, &allocInfo, imageDescriptorSets.data()) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to allocate descriptor set!");
     }
-    
+
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(frameCount);;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(frameCount);
+    ;
     allocInfo.pSetLayouts = layoutsSet1.data();
 
     frameDescriptorSets.resize(frameCount);
-    if (vkAllocateDescriptorSets(device, &allocInfo, frameDescriptorSets.data()) != VK_SUCCESS) {
+    if (vkAllocateDescriptorSets(device, &allocInfo, frameDescriptorSets.data()) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to allocate descriptor set!");
     }
 
-    //to do: 这里的循环应该是 descriptorSetCount
-    for (size_t i = 0; i < imageCount; i++) {
+    // to do: 这里的循环应该是 descriptorSetCount
+    for (size_t i = 0; i < imageCount; i++)
+    {
         VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL; // 图像布局必须是 GENERAL
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;                                       // 图像布局必须是 GENERAL
         imageInfo.imageView = pathTracingResourceManager->getPathTracingOutputImageviews()[i]; // 存储图像的视图
         imageInfo.sampler = nullptr; // 如果不需要采样器，可以设置为 nullptr
 
@@ -476,24 +477,27 @@ void PathTracingPipeline::createDescriptorSets() {
         accumulationImageWrite.pImageInfo = &accumulationImageInfo;
 
         std::vector<VkWriteDescriptorSet> descriptorWrites = {imageWrite, accumulationImageWrite};
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0,
+                               nullptr);
     }
 
-    for (size_t i = 0; i < frameCount; i++) {
+    for (size_t i = 0; i < frameCount; i++)
+    {
         VkDescriptorBufferInfo trianglesBufferInfo{};
         trianglesBufferInfo.buffer = pathTracingResourceManager->getTriangleStorageBuffer();
         trianglesBufferInfo.offset = 0;
-        trianglesBufferInfo.range = VK_WHOLE_SIZE; 
+        trianglesBufferInfo.range = VK_WHOLE_SIZE;
 
         VkDescriptorBufferInfo bvhBufferInfo{};
         bvhBufferInfo.buffer = pathTracingResourceManager->getBVHStorageBuffer();
         bvhBufferInfo.offset = 0;
-        bvhBufferInfo.range = VK_WHOLE_SIZE;    
+        bvhBufferInfo.range = VK_WHOLE_SIZE;
 
         VkDescriptorBufferInfo materialBufferInfo{};
         materialBufferInfo.buffer = pathTracingResourceManager->getMaterialUniformBuffers()[i];
         materialBufferInfo.offset = 0;
-        materialBufferInfo.range = sizeof(MaterialUniformBufferObject) * pathTracingResourceManager->getShapeNames().size();
+        materialBufferInfo.range =
+            sizeof(MaterialUniformBufferObject) * pathTracingResourceManager->getShapeNames().size();
 
         VkDescriptorBufferInfo cameraDataBufferInfo{};
         cameraDataBufferInfo.buffer = pathTracingResourceManager->getCameraDataBuffer()[i];
@@ -504,7 +508,7 @@ void PathTracingPipeline::createDescriptorSets() {
         emissiveTrianglesBufferInfo.buffer = pathTracingResourceManager->getEmissiveTrianglesBuffer();
         emissiveTrianglesBufferInfo.offset = 0;
         emissiveTrianglesBufferInfo.range = VK_WHOLE_SIZE; // 假设整个缓冲区都需要
-    
+
         VkWriteDescriptorSet trianglesWrite{};
         trianglesWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         trianglesWrite.dstSet = frameDescriptorSets[i];
@@ -513,7 +517,7 @@ void PathTracingPipeline::createDescriptorSets() {
         trianglesWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         trianglesWrite.descriptorCount = 1;
         trianglesWrite.pBufferInfo = &trianglesBufferInfo;
-    
+
         VkWriteDescriptorSet bvhBufferWrite{};
         bvhBufferWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         bvhBufferWrite.dstSet = frameDescriptorSets[i];
@@ -522,7 +526,7 @@ void PathTracingPipeline::createDescriptorSets() {
         bvhBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bvhBufferWrite.descriptorCount = 1;
         bvhBufferWrite.pBufferInfo = &bvhBufferInfo;
-        
+
         VkWriteDescriptorSet materialsWrite{};
         materialsWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         materialsWrite.dstSet = frameDescriptorSets[i];
@@ -550,7 +554,9 @@ void PathTracingPipeline::createDescriptorSets() {
         emissiveTrianglesWrite.descriptorCount = 1;
         emissiveTrianglesWrite.pBufferInfo = &emissiveTrianglesBufferInfo;
 
-        std::vector<VkWriteDescriptorSet> descriptorWrites = {trianglesWrite, bvhBufferWrite, materialsWrite, cameraDataWrite, emissiveTrianglesWrite};
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        std::vector<VkWriteDescriptorSet> descriptorWrites = {trianglesWrite, bvhBufferWrite, materialsWrite,
+                                                              cameraDataWrite, emissiveTrianglesWrite};
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0,
+                               nullptr);
     }
 }

@@ -1,10 +1,12 @@
 #include "camera.hpp"
 
-glm::mat4 Camera::getViewMatrix() const {
+glm::mat4 Camera::getViewMatrix() const
+{
     return glm::lookAt(position, position + front, up);
 }
 
-void Camera::processKeyboard(CameraMovement direction, float deltaTime) {
+void Camera::processKeyboard(CameraMovement direction, float deltaTime)
+{
     float velocity = movementSpeed * deltaTime;
     if (direction == CameraMovement::FORWARD)
         position += front * velocity;
@@ -20,15 +22,17 @@ void Camera::processKeyboard(CameraMovement direction, float deltaTime) {
         position -= worldUp * velocity;
 }
 
-void Camera::processMouseMovement(float xoffset, float yoffset, bool constrainPitch) {
+void Camera::processMouseMovement(float xoffset, float yoffset, bool constrainPitch)
+{
     xoffset *= mouseSensitivity;
     yoffset *= mouseSensitivity;
 
-    yaw   += xoffset;
+    yaw += xoffset;
     pitch += yoffset;
 
     // 保证 pitch 在 [-89, 89] 之间，防止视角翻转
-    if (constrainPitch) {
+    if (constrainPitch)
+    {
         if (pitch > 89.0f)
             pitch = 89.0f;
         if (pitch < -89.0f)
@@ -38,7 +42,8 @@ void Camera::processMouseMovement(float xoffset, float yoffset, bool constrainPi
     updateCameraVectors();
 }
 
-void Camera::updateCameraVectors() {
+void Camera::updateCameraVectors()
+{
     // 根据当前 yaw 和 pitch 更新前向量
     glm::vec3 frontVec;
     frontVec.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
@@ -48,5 +53,5 @@ void Camera::updateCameraVectors() {
 
     // 同时重新计算 right 和 up
     right = glm::normalize(glm::cross(front, worldUp));
-    up    = glm::normalize(glm::cross(right, front));
+    up = glm::normalize(glm::cross(right, front));
 }

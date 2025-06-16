@@ -1,27 +1,43 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
-#include <vector>
 #include "vulkan_context.hpp"
+#include <vector>
+#include <vulkan/vulkan.h>
 
-class SwapChainManager {
-public:
+class SwapChainManager
+{
+  public:
     void init(VkDevice device, VulkanContext& vulkanContext, GLFWwindow* window);
     void cleanup();
 
     void recreateSwapChain();
 
-    VkSwapchainKHR getSwapChain() const { return swapChain; }
-    const std::vector<VkImage>& getSwapChainImages() const { return swapChainImages; }
-    const std::vector<VkImageView>& getSwapChainImageViews() const { return swapChainImageViews; }
-    VkFormat getSwapChainImageFormat() const { return swapChainImageFormat; }
-    VkExtent2D getSwapChainExtent() const { return swapChainExtent; }
+    VkSwapchainKHR getSwapChain() const
+    {
+        return swapChain;
+    }
+    const std::vector<VkImage>& getSwapChainImages() const
+    {
+        return swapChainImages;
+    }
+    const std::vector<VkImageView>& getSwapChainImageViews() const
+    {
+        return swapChainImageViews;
+    }
+    VkFormat getSwapChainImageFormat() const
+    {
+        return swapChainImageFormat;
+    }
+    VkExtent2D getSwapChainExtent() const
+    {
+        return swapChainExtent;
+    }
 
     VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
-private:
+  private:
     VkDevice device = VK_NULL_HANDLE;
     // VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     // VkSurfaceKHR surface = VK_NULL_HANDLE;

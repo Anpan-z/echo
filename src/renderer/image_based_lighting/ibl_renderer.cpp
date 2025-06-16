@@ -4,11 +4,12 @@
 #include <span>
 #include <stdexcept>
 
-void IBLRenderer::init(VkDevice device, VkQueue graphicsQueue, CommandManager& commandManager, TextureResourceManager& textureResourceManager) {
+void IBLRenderer::init(VkDevice device, VkQueue graphicsQueue, CommandManager& commandManager,
+                       TextureResourceManager& textureResourceManager)
+{
     this->device = device;
     this->graphicsQueue = graphicsQueue;
     this->commandManager = &commandManager;
-
 
     createSampler();
     createDescriptorPool();
@@ -20,14 +21,16 @@ void IBLRenderer::init(VkDevice device, VkQueue graphicsQueue, CommandManager& c
     generateBRDFLUT(textureResourceManager);
 }
 
-void IBLRenderer::cleanup() {
+void IBLRenderer::cleanup()
+{
     vkDestroySampler(device, environmentMapSampler, nullptr);
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     // vkDestroyPipelineLayout(device, irradianceMapPipelineLayout, nullptr);
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 }
 
-void IBLRenderer::generateEnvironmentMap(TextureResourceManager& textureResourceManager) {
+void IBLRenderer::generateEnvironmentMap(TextureResourceManager& textureResourceManager)
+{
     // VkImage environmentMapImage = textureResourceManager.getEnvironmentMapImage();
     VkImageView sourceHDRImageView = textureResourceManager.getSourceHDRImageView();
     VkImageView environmentMapImageView = textureResourceManager.getEnvironmentMapImageView();
@@ -39,13 +42,15 @@ void IBLRenderer::generateEnvironmentMap(TextureResourceManager& textureResource
     std::string vertex_shader_code_path = "../shader/ibl_environment.vert";
     std::string fragment_shader_code_path = "../shader/ibl_environment.frag";
     // VkPipelineLayout environmentMapPipelineLayout;
-    auto [environmentPipeline, environmentMapPipelineLayout] = createPipeline(renderPass, environmentMapSize, vertex_shader_code_path, fragment_shader_code_path);
-    
-    
-    for (size_t i = 0; i < environmentMapFaceImageViews.size(); ++i) {
-        VkFramebuffer framebuffer = createFramebuffer(environmentMapFaceImageViews[i], renderPass, environmentMapSize, environmentMapSize);
+    auto [environmentPipeline, environmentMapPipelineLayout] =
+        createPipeline(renderPass, environmentMapSize, vertex_shader_code_path, fragment_shader_code_path);
+
+    for (size_t i = 0; i < environmentMapFaceImageViews.size(); ++i)
+    {
+        VkFramebuffer framebuffer =
+            createFramebuffer(environmentMapFaceImageViews[i], renderPass, environmentMapSize, environmentMapSize);
         VkCommandBuffer commandBuffer = commandManager->beginSingleTimeCommands();
-        
+
         VkClearValue clearValue{};
         clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
         VkRenderPassBeginInfo renderPassInfo{};
@@ -56,42 +61,45 @@ void IBLRenderer::generateEnvironmentMap(TextureResourceManager& textureResource
         renderPassInfo.renderArea.extent = {environmentMapSize, environmentMapSize};
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearValue;
-    
+
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, environmentPipeline);
 
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width  = (float)environmentMapSize;
+        viewport.width = (float)environmentMapSize;
         viewport.height = (float)environmentMapSize;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-        
+
         VkRect2D scissor{};
         scissor.offset = {0, 0};
         scissor.extent = {environmentMapSize, environmentMapSize};
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-    
+
         // Bind environment map as input
-        VkDescriptorSet descriptorSet = createDescriptorSet(sourceHDRImageView, environmentMapSampler); // Create descriptor set for environment map
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, environmentMapPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-    
-        vkCmdDraw(commandBuffer, 6, 1, 6*i, 0);
+        VkDescriptorSet descriptorSet =
+            createDescriptorSet(sourceHDRImageView, environmentMapSampler); // Create descriptor set for environment map
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, environmentMapPipelineLayout, 0, 1,
+                                &descriptorSet, 0, nullptr);
+
+        vkCmdDraw(commandBuffer, 6, 1, 6 * i, 0);
         vkCmdEndRenderPass(commandBuffer);
 
         commandManager->endSingleTimeCommands(commandBuffer);
 
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
-    
+
     vkDestroyPipeline(device, environmentPipeline, nullptr);
     vkDestroyPipelineLayout(device, environmentMapPipelineLayout, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);
 }
 
-void IBLRenderer::generateIrradianceMap(TextureResourceManager& textureResourceManager) {
+void IBLRenderer::generateIrradianceMap(TextureResourceManager& textureResourceManager)
+{
     // VkImage environmentMapImage = textureResourceManager.getEnvironmentMapImage();
     VkImageView environmentMapImageView = textureResourceManager.getEnvironmentMapImageView();
 
@@ -104,12 +112,15 @@ void IBLRenderer::generateIrradianceMap(TextureResourceManager& textureResourceM
     std::string vertex_shader_code_path = "../shader/ibl_irradiance.vert";
     std::string fragment_shader_code_path = "../shader/ibl_irradiance.frag";
     // std::string fragment_shader_code_path = "../shader/ibl_irradiance.frag";
-    auto [irradiancePipeline, irradianceMapPipelineLayout] = createPipeline(renderPass, irradianceMapSize, vertex_shader_code_path, fragment_shader_code_path);
-    
-    for (size_t i = 0; i < irradianceMapFaceImageViews.size(); ++i) {
-        VkFramebuffer framebuffer = createFramebuffer(irradianceMapFaceImageViews[i], renderPass, irradianceMapSize, irradianceMapSize);
+    auto [irradiancePipeline, irradianceMapPipelineLayout] =
+        createPipeline(renderPass, irradianceMapSize, vertex_shader_code_path, fragment_shader_code_path);
+
+    for (size_t i = 0; i < irradianceMapFaceImageViews.size(); ++i)
+    {
+        VkFramebuffer framebuffer =
+            createFramebuffer(irradianceMapFaceImageViews[i], renderPass, irradianceMapSize, irradianceMapSize);
         VkCommandBuffer commandBuffer = commandManager->beginSingleTimeCommands();
-        
+
         VkClearValue clearValue{};
         clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
         VkRenderPassBeginInfo renderPassInfo{};
@@ -120,29 +131,31 @@ void IBLRenderer::generateIrradianceMap(TextureResourceManager& textureResourceM
         renderPassInfo.renderArea.extent = {irradianceMapSize, irradianceMapSize};
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearValue;
-    
+
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, irradiancePipeline);
-    
+
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width  = (float)irradianceMapSize;
+        viewport.width = (float)irradianceMapSize;
         viewport.height = (float)irradianceMapSize;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-        
+
         VkRect2D scissor{};
         scissor.offset = {0, 0};
         scissor.extent = {irradianceMapSize, irradianceMapSize};
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
         // Bind environment map as input
-        VkDescriptorSet descriptorSet = createDescriptorSet(environmentMapImageView, environmentMapSampler); // Create descriptor set for environment map
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, irradianceMapPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-    
-        vkCmdDraw(commandBuffer, 6, 1, 6*i, 0);
+        VkDescriptorSet descriptorSet = createDescriptorSet(
+            environmentMapImageView, environmentMapSampler); // Create descriptor set for environment map
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, irradianceMapPipelineLayout, 0, 1,
+                                &descriptorSet, 0, nullptr);
+
+        vkCmdDraw(commandBuffer, 6, 1, 6 * i, 0);
         vkCmdEndRenderPass(commandBuffer);
 
         commandManager->endSingleTimeCommands(commandBuffer);
@@ -155,12 +168,14 @@ void IBLRenderer::generateIrradianceMap(TextureResourceManager& textureResourceM
     vkDestroyRenderPass(device, renderPass, nullptr);
 }
 
-void IBLRenderer::generatePrefilteredMap(TextureResourceManager& textureResourceManager) {
+void IBLRenderer::generatePrefilteredMap(TextureResourceManager& textureResourceManager)
+{
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
 
     // 获取环境贴图和预过滤贴图相关资源
     VkImageView environmentMapImageView = textureResourceManager.getEnvironmentMapImageView();
-    std::vector<std::array<VkImageView, 6>> prefilteredMapFaceImageViews = textureResourceManager.getPrefilteredMapFaceImageViews();
+    std::vector<std::array<VkImageView, 6>> prefilteredMapFaceImageViews =
+        textureResourceManager.getPrefilteredMapFaceImageViews();
 
     const uint32_t prefilteredMapSize = 512; // 预过滤环境贴图的初始分辨率
     const uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(prefilteredMapSize))) + 1;
@@ -171,18 +186,22 @@ void IBLRenderer::generatePrefilteredMap(TextureResourceManager& textureResource
     // 加载着色器并创建管线
     std::string vertex_shader_code_path = "../shader/ibl_prefiltered.vert";
     std::string fragment_shader_code_path = "../shader/ibl_prefiltered.frag";
-    auto [prefilteredPipeline, prefilteredPipelineLayout] = createPipeline(renderPass, prefilteredMapSize, vertex_shader_code_path, fragment_shader_code_path);
+    auto [prefilteredPipeline, prefilteredPipelineLayout] =
+        createPipeline(renderPass, prefilteredMapSize, vertex_shader_code_path, fragment_shader_code_path);
 
     // 遍历每个 Mipmap 等级和立方体贴图的 6 个面
-    for (uint32_t mipLevel = 0; mipLevel < mipLevels; ++mipLevel) {
+    for (uint32_t mipLevel = 0; mipLevel < mipLevels; ++mipLevel)
+    {
         uint32_t mipWidth = prefilteredMapSize >> mipLevel;
         uint32_t mipHeight = prefilteredMapSize >> mipLevel;
 
-        for (uint32_t face = 0; face < 6; ++face) {
-            VkFramebuffer framebuffer = createFramebuffer(prefilteredMapFaceImageViews[mipLevel][face], renderPass, mipWidth, mipHeight);
+        for (uint32_t face = 0; face < 6; ++face)
+        {
+            VkFramebuffer framebuffer =
+                createFramebuffer(prefilteredMapFaceImageViews[mipLevel][face], renderPass, mipWidth, mipHeight);
             VkCommandBuffer commandBuffer = commandManager->beginSingleTimeCommands();
 
-             // 设置视口和剪裁区域
+            // 设置视口和剪裁区域
             VkViewport viewport{};
             viewport.x = 0.0f;
             viewport.y = 0.0f;
@@ -190,12 +209,11 @@ void IBLRenderer::generatePrefilteredMap(TextureResourceManager& textureResource
             viewport.height = static_cast<float>(mipHeight);
             viewport.minDepth = 0.0f;
             viewport.maxDepth = 1.0f;
-            
+
             VkRect2D scissor{};
             scissor.offset = {0, 0};
             scissor.extent = {mipWidth, mipHeight};
-            
-            
+
             // 设置清除值
             VkClearValue clearValue{};
             clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
@@ -207,19 +225,21 @@ void IBLRenderer::generatePrefilteredMap(TextureResourceManager& textureResource
             renderPassInfo.renderArea.extent = {mipWidth, mipHeight};
             renderPassInfo.clearValueCount = 1;
             renderPassInfo.pClearValues = &clearValue;
-            
+
             vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, prefilteredPipeline);
-            
+
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
             vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
             // 动态设置粗糙度（Roughness）值
             float roughness = static_cast<float>(mipLevel) / static_cast<float>(mipLevels - 1);
-            vkCmdPushConstants(commandBuffer, prefilteredPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float), &roughness);
+            vkCmdPushConstants(commandBuffer, prefilteredPipelineLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float), &roughness);
 
             // 绑定环境贴图作为输入
             VkDescriptorSet descriptorSet = createDescriptorSet(environmentMapImageView, environmentMapSampler);
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, prefilteredPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, prefilteredPipelineLayout, 0, 1,
+                                    &descriptorSet, 0, nullptr);
 
             // 绘制立方体的当前面
             vkCmdDraw(commandBuffer, 6, 1, 6 * face, 0);
@@ -237,7 +257,8 @@ void IBLRenderer::generatePrefilteredMap(TextureResourceManager& textureResource
     vkDestroyRenderPass(device, renderPass, nullptr);
 }
 
-void IBLRenderer::generateBRDFLUT(TextureResourceManager& textureResourceManager) {
+void IBLRenderer::generateBRDFLUT(TextureResourceManager& textureResourceManager)
+{
     // VkImageView environmentMapImageView = textureResourceManager.getEnvironmentMapImageView();
     VkImageView brdfLUTImageView = textureResourceManager.getBRDFLUTImageView();
 
@@ -246,11 +267,12 @@ void IBLRenderer::generateBRDFLUT(TextureResourceManager& textureResourceManager
     VkRenderPass renderPass = createRenderPass(VK_FORMAT_R32G32B32A32_SFLOAT);
     std::string vertex_shader_code_path = "../shader/ibl_brdflut.vert";
     std::string fragment_shader_code_path = "../shader/ibl_brdflut.frag";
-    auto [brdfLUTPipeline, brdfLUTPipelineLayout] = createPipeline(renderPass, brdfLUTMapSize, vertex_shader_code_path, fragment_shader_code_path);
-    
+    auto [brdfLUTPipeline, brdfLUTPipelineLayout] =
+        createPipeline(renderPass, brdfLUTMapSize, vertex_shader_code_path, fragment_shader_code_path);
+
     VkFramebuffer framebuffer = createFramebuffer(brdfLUTImageView, renderPass, brdfLUTMapSize, brdfLUTMapSize);
     VkCommandBuffer commandBuffer = commandManager->beginSingleTimeCommands();
-    
+
     VkClearValue clearValue{};
     clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
     VkRenderPassBeginInfo renderPassInfo{};
@@ -268,20 +290,22 @@ void IBLRenderer::generateBRDFLUT(TextureResourceManager& textureResourceManager
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width  = (float)brdfLUTMapSize;
+    viewport.width = (float)brdfLUTMapSize;
     viewport.height = (float)brdfLUTMapSize;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-    
+
     VkRect2D scissor{};
     scissor.offset = {0, 0};
     scissor.extent = {brdfLUTMapSize, brdfLUTMapSize};
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // Bind environment map as input
-    // VkDescriptorSet descriptorSet = createDescriptorSet(environmentMapImageView, textureResourceManager.getBRDFLUTSampler()); // Create descriptor set for environment map
-    // vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, brdfLUTPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+    // VkDescriptorSet descriptorSet = createDescriptorSet(environmentMapImageView,
+    // textureResourceManager.getBRDFLUTSampler()); // Create descriptor set for environment map
+    // vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, brdfLUTPipelineLayout, 0, 1,
+    // &descriptorSet, 0, nullptr);
 
     vkCmdDraw(commandBuffer, 6, 1, 0, 0);
     vkCmdEndRenderPass(commandBuffer);
@@ -290,13 +314,13 @@ void IBLRenderer::generateBRDFLUT(TextureResourceManager& textureResourceManager
 
     vkDestroyFramebuffer(device, framebuffer, nullptr);
 
-
     vkDestroyPipeline(device, brdfLUTPipeline, nullptr);
     vkDestroyPipelineLayout(device, brdfLUTPipelineLayout, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);
 }
 
-VkRenderPass IBLRenderer::createRenderPass(VkFormat format) {
+VkRenderPass IBLRenderer::createRenderPass(VkFormat format)
+{
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = format;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -334,14 +358,17 @@ VkRenderPass IBLRenderer::createRenderPass(VkFormat format) {
     renderPassInfo.pDependencies = &dependency;
 
     VkRenderPass renderPass;
-    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
+    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS)
+    {
         throw std::runtime_error("Failed to create render pass for irradiance map!");
     }
 
     return renderPass;
 }
 
-VkFramebuffer IBLRenderer::createFramebuffer(VkImageView& imageView, VkRenderPass renderPass, uint32_t width, uint32_t height) {
+VkFramebuffer IBLRenderer::createFramebuffer(VkImageView& imageView, VkRenderPass renderPass, uint32_t width,
+                                             uint32_t height)
+{
     VkFramebufferCreateInfo framebufferInfo{};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     framebufferInfo.renderPass = renderPass; // 使用与渲染管线匹配的 RenderPass
@@ -352,14 +379,18 @@ VkFramebuffer IBLRenderer::createFramebuffer(VkImageView& imageView, VkRenderPas
     framebufferInfo.layers = 1;
 
     VkFramebuffer framebuffer;
-    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer) != VK_SUCCESS) {
+    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer) != VK_SUCCESS)
+    {
         throw std::runtime_error("Failed to create framebuffer for irradiance map!");
     }
 
     return framebuffer;
 }
 
-std::tuple<VkPipeline, VkPipelineLayout> IBLRenderer::createPipeline(VkRenderPass renderPass, uint32_t size, std::string vertex_shader_code_path, std::string fragment_shader_code_path) {
+std::tuple<VkPipeline, VkPipelineLayout> IBLRenderer::createPipeline(VkRenderPass renderPass, uint32_t size,
+                                                                     std::string vertex_shader_code_path,
+                                                                     std::string fragment_shader_code_path)
+{
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
 
     // 加载着色器模块
@@ -368,38 +399,40 @@ std::tuple<VkPipeline, VkPipelineLayout> IBLRenderer::createPipeline(VkRenderPas
 
     std::string vs = vulkanUtils.readFileToString(vertex_shader_code_path);
     shaderc::Compiler compiler;
-    //编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
+    // 编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
     auto vertResult = compiler.CompileGlslToSpv(vs, shaderc_glsl_vertex_shader, vertex_shader_code_path.c_str());
     auto errorInfo_vert = vertResult.GetErrorMessage();
-    if (!errorInfo_vert.empty()) {
+    if (!errorInfo_vert.empty())
+    {
         throw std::runtime_error("Vertex shader compilation error: " + errorInfo_vert);
     }
-    //可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
+    // 可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
 
-    std::span<const uint32_t> vert_spv = { vertResult.begin(), size_t(vertResult.end() - vertResult.begin()) * 4 };
-    VkShaderModuleCreateInfo vsmoduleCreateInfo;// 准备顶点着色器模块创建信息
+    std::span<const uint32_t> vert_spv = {vertResult.begin(), size_t(vertResult.end() - vertResult.begin()) * 4};
+    VkShaderModuleCreateInfo vsmoduleCreateInfo; // 准备顶点着色器模块创建信息
     vsmoduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    vsmoduleCreateInfo.pNext = nullptr;// 自定义数据的指针
+    vsmoduleCreateInfo.pNext = nullptr; // 自定义数据的指针
     vsmoduleCreateInfo.flags = 0;
-    vsmoduleCreateInfo.codeSize = vert_spv.size();// 顶点着色器SPV数据总字节数
-    vsmoduleCreateInfo.pCode = vert_spv.data(); // 顶点着色器SPV数据
-    
+    vsmoduleCreateInfo.codeSize = vert_spv.size(); // 顶点着色器SPV数据总字节数
+    vsmoduleCreateInfo.pCode = vert_spv.data();    // 顶点着色器SPV数据
+
     std::string fs = vulkanUtils.readFileToString(fragment_shader_code_path);
     auto fragResult = compiler.CompileGlslToSpv(fs, shaderc_glsl_fragment_shader, fragment_shader_code_path.c_str());
     auto errorInfo_frag = fragResult.GetErrorMessage();
-    if (!errorInfo_frag.empty()) {
+    if (!errorInfo_frag.empty())
+    {
         throw std::runtime_error("Fragment shader compilation error: " + errorInfo_frag);
     }
-    //可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
-    std::span<const uint32_t> frag_spv = { fragResult.begin(), size_t(fragResult.end() - fragResult.begin()) * 4 };
-    VkShaderModuleCreateInfo fsmoduleCreateInfo;// 准备顶点着色器模块创建信息
+    // 可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
+    std::span<const uint32_t> frag_spv = {fragResult.begin(), size_t(fragResult.end() - fragResult.begin()) * 4};
+    VkShaderModuleCreateInfo fsmoduleCreateInfo; // 准备顶点着色器模块创建信息
     fsmoduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    fsmoduleCreateInfo.pNext = nullptr;// 自定义数据的指针
+    fsmoduleCreateInfo.pNext = nullptr; // 自定义数据的指针
     fsmoduleCreateInfo.flags = 0;
-    fsmoduleCreateInfo.codeSize = frag_spv.size();// 顶点着色器SPV数据总字节数
-    fsmoduleCreateInfo.pCode = frag_spv.data(); // 顶点着色器SPV数据
-    //auto vertShaderCode = readFile("shaders/vert.spv");
-    //auto fragShaderCode = readFile("shaders/frag.spv");
+    fsmoduleCreateInfo.codeSize = frag_spv.size(); // 顶点着色器SPV数据总字节数
+    fsmoduleCreateInfo.pCode = frag_spv.data();    // 顶点着色器SPV数据
+    // auto vertShaderCode = readFile("shaders/vert.spv");
+    // auto fragShaderCode = readFile("shaders/frag.spv");
 
     auto vertShaderModule = vulkanUtils.createShaderModule(device, vsmoduleCreateInfo);
     auto fragShaderModule = vulkanUtils.createShaderModule(device, fsmoduleCreateInfo);
@@ -470,7 +503,8 @@ std::tuple<VkPipeline, VkPipelineLayout> IBLRenderer::createPipeline(VkRenderPas
 
     // 颜色混合
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachment.blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
@@ -480,11 +514,8 @@ std::tuple<VkPipeline, VkPipelineLayout> IBLRenderer::createPipeline(VkRenderPas
     colorBlending.pAttachments = &colorBlendAttachment;
 
     // 动态状态
-    std::vector<VkDynamicState> dynamicStates = {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR
-    };
-    
+    std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+
     VkPipelineDynamicStateCreateInfo dynamicState{};
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
@@ -495,7 +526,7 @@ std::tuple<VkPipeline, VkPipelineLayout> IBLRenderer::createPipeline(VkRenderPas
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT; // 支持顶点和片段着色器
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(float); // 假设 Push Constant 是一个 float（如粗糙度）
-    
+
     VkPipelineLayout PipelineLayout;
 
     // 管线布局
@@ -506,7 +537,8 @@ std::tuple<VkPipeline, VkPipelineLayout> IBLRenderer::createPipeline(VkRenderPas
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &PipelineLayout) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &PipelineLayout) != VK_SUCCESS)
+    {
         throw std::runtime_error("Failed to create pipeline layout for irradiance map!");
     }
 
@@ -527,7 +559,8 @@ std::tuple<VkPipeline, VkPipelineLayout> IBLRenderer::createPipeline(VkRenderPas
     pipelineInfo.subpass = 0;
 
     VkPipeline pipeline;
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS)
+    {
         throw std::runtime_error("Failed to create graphics pipeline for irradiance map!");
     }
 
@@ -538,7 +571,8 @@ std::tuple<VkPipeline, VkPipelineLayout> IBLRenderer::createPipeline(VkRenderPas
     return {pipeline, PipelineLayout};
 }
 
-void IBLRenderer::createDescriptorSetLayout() {
+void IBLRenderer::createDescriptorSetLayout()
+{
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     samplerLayoutBinding.binding = 0;
     samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -551,12 +585,14 @@ void IBLRenderer::createDescriptorSetLayout() {
     layoutInfo.bindingCount = 1;
     layoutInfo.pBindings = &samplerLayoutBinding;
 
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create descriptor set layout!");
     }
 }
 
-VkDescriptorSet IBLRenderer::createDescriptorSet(VkImageView imageView, VkSampler sampler) {
+VkDescriptorSet IBLRenderer::createDescriptorSet(VkImageView imageView, VkSampler sampler)
+{
     // 描述符集布局
     // VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     // samplerLayoutBinding.binding = 0;
@@ -583,7 +619,8 @@ VkDescriptorSet IBLRenderer::createDescriptorSet(VkImageView imageView, VkSample
     allocInfo.pSetLayouts = &descriptorSetLayout;
 
     VkDescriptorSet descriptorSet;
-    if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) {
+    if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS)
+    {
         throw std::runtime_error("Failed to allocate descriptor set!");
     }
 
@@ -607,45 +644,48 @@ VkDescriptorSet IBLRenderer::createDescriptorSet(VkImageView imageView, VkSample
     return descriptorSet;
 }
 
-void IBLRenderer::createDescriptorPool() {
+void IBLRenderer::createDescriptorPool()
+{
     // 定义描述符池大小
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 6 * (2+10); // 支持 3 个采样器
+    poolSize.descriptorCount = 6 * (2 + 10); // 支持 3 个采样器
 
     // 创建描述符池
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 6 * (2+10); // 最大支持 3 个描述符集
+    poolInfo.maxSets = 6 * (2 + 10); // 最大支持 3 个描述符集
 
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
+    {
         throw std::runtime_error("Failed to create descriptor pool!");
     }
 }
 
-void IBLRenderer::createSampler() {
+void IBLRenderer::createSampler()
+{
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR; // 放大过滤
-    samplerInfo.minFilter = VK_FILTER_LINEAR; // 缩小过滤
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; // Mipmap 线性过滤
+    samplerInfo.magFilter = VK_FILTER_LINEAR;                         // 放大过滤
+    samplerInfo.minFilter = VK_FILTER_LINEAR;                         // 缩小过滤
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;           // Mipmap 线性过滤
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // U 方向边界模式
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // V 方向边界模式
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // W 方向边界模式
-    samplerInfo.mipLodBias = 0.0f; // Mipmap 偏移
-    samplerInfo.anisotropyEnable = VK_TRUE; // 启用各向异性过滤
-    samplerInfo.maxAnisotropy = 16; // 最大各向异性等级
-    samplerInfo.compareEnable = VK_FALSE; // 不启用比较操作
+    samplerInfo.mipLodBias = 0.0f;                                    // Mipmap 偏移
+    samplerInfo.anisotropyEnable = VK_TRUE;                           // 启用各向异性过滤
+    samplerInfo.maxAnisotropy = 16;                                   // 最大各向异性等级
+    samplerInfo.compareEnable = VK_FALSE;                             // 不启用比较操作
     samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-    samplerInfo.minLod = 0.0f; // 最小 LOD
-    samplerInfo.maxLod = VK_LOD_CLAMP_NONE; // 最大 LOD
+    samplerInfo.minLod = 0.0f;                                  // 最小 LOD
+    samplerInfo.maxLod = VK_LOD_CLAMP_NONE;                     // 最大 LOD
     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK; // 边界颜色
-    samplerInfo.unnormalizedCoordinates = VK_FALSE; // 使用标准化纹理坐标
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;             // 使用标准化纹理坐标
 
-    
-    if (vkCreateSampler(device, &samplerInfo, nullptr, &environmentMapSampler) != VK_SUCCESS) {
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &environmentMapSampler) != VK_SUCCESS)
+    {
         throw std::runtime_error("Failed to create sampler!");
     }
 }

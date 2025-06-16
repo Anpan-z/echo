@@ -86,8 +86,9 @@ void GBufferResourceManager::createAttachment(std::vector<GBufferAttachment>& at
     {
         attachment[index].format = format;
         VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
-        vulkanUtils.createImage(device, physicalDevice, outPutExtent.width, outPutExtent.height, format, VK_IMAGE_TILING_OPTIMAL, usage,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, attachment[index].image, attachment[index].memory);
+        vulkanUtils.createImage(device, physicalDevice, outPutExtent.width, outPutExtent.height, format,
+                                VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                attachment[index].image, attachment[index].memory);
         attachment[index].view = vulkanUtils.createImageView(device, attachment[index].image, format, aspectFlags);
     }
 }

@@ -1,12 +1,13 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
-#include <string>
-#include <array>
 #include "command_manager.hpp"
+#include <array>
+#include <string>
+#include <vulkan/vulkan.h>
 
-class TextureResourceManager {
-public:
+class TextureResourceManager
+{
+  public:
     void init(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue graphicsQueue, CommandManager& commandManager);
     void cleanup();
 
@@ -18,21 +19,57 @@ public:
     void createPrefilteredMap();
     void createBRDFLUT();
 
-    const VkImageView& getSourceHDRImageView() const { return sourceHDRImageView; }
-    const VkImageView& getEnvironmentMapImageView() const { return environmentMapImageView; }
-    const std::array<VkImageView, 6>& getEnvironmentMapFaceImageViews() const { return environmentMapFaceImageViews; }
-    const VkImageView& getIrradianceMapImageView() const { return irradianceMapImageView; }
-    const std::array<VkImageView, 6>& getIrradianceMapFaceImageViews() const { return irradianceMapFaceImageViews; }
-    const VkImageView& getPrefilteredMapImageView() const { return prefilteredMapImageView; }
-    const std::vector<std::array<VkImageView, 6>>& getPrefilteredMapFaceImageViews() const { return prefilteredMapFaceImageViews; }
-    const VkImageView& getBRDFLUTImageView() const { return brdfLUTImageView; }
+    const VkImageView& getSourceHDRImageView() const
+    {
+        return sourceHDRImageView;
+    }
+    const VkImageView& getEnvironmentMapImageView() const
+    {
+        return environmentMapImageView;
+    }
+    const std::array<VkImageView, 6>& getEnvironmentMapFaceImageViews() const
+    {
+        return environmentMapFaceImageViews;
+    }
+    const VkImageView& getIrradianceMapImageView() const
+    {
+        return irradianceMapImageView;
+    }
+    const std::array<VkImageView, 6>& getIrradianceMapFaceImageViews() const
+    {
+        return irradianceMapFaceImageViews;
+    }
+    const VkImageView& getPrefilteredMapImageView() const
+    {
+        return prefilteredMapImageView;
+    }
+    const std::vector<std::array<VkImageView, 6>>& getPrefilteredMapFaceImageViews() const
+    {
+        return prefilteredMapFaceImageViews;
+    }
+    const VkImageView& getBRDFLUTImageView() const
+    {
+        return brdfLUTImageView;
+    }
 
-    const VkSampler& getEnvironmentMapSampler() const { return environmentMapSampler; }
-    const VkSampler& getIrradianceMapSampler() const { return irradianceMapSampler; }
-    const VkSampler& getPrefilteredMapSampler() const { return prefilteredMapSampler; }
-    const VkSampler& getBRDFLUTSampler() const { return brdfLUTSampler; }
+    const VkSampler& getEnvironmentMapSampler() const
+    {
+        return environmentMapSampler;
+    }
+    const VkSampler& getIrradianceMapSampler() const
+    {
+        return irradianceMapSampler;
+    }
+    const VkSampler& getPrefilteredMapSampler() const
+    {
+        return prefilteredMapSampler;
+    }
+    const VkSampler& getBRDFLUTSampler() const
+    {
+        return brdfLUTSampler;
+    }
 
-private:
+  private:
     VkDevice device;
     VkPhysicalDevice physicalDevice;
     CommandManager* commandManager;
@@ -41,7 +78,7 @@ private:
     VkImage sourceHDRImage;
     VkDeviceMemory sourceHDRImageMemory;
     VkImageView sourceHDRImageView;
-    
+
     VkImage environmentMapImage;
     VkDeviceMemory environmentMapImageMemory;
     VkImageView environmentMapImageView;

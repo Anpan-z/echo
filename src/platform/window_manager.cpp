@@ -1,7 +1,9 @@
 #include "window_manager.hpp"
 
-void WindowManager::init(uint32_t width, uint32_t height, const char* title) {
-    if (!glfwInit()) {
+void WindowManager::init(uint32_t width, uint32_t height, const char* title)
+{
+    if (!glfwInit())
+    {
         throw std::runtime_error("Failed to initialize GLFW!");
     }
 
@@ -9,7 +11,8 @@ void WindowManager::init(uint32_t width, uint32_t height, const char* title) {
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     window = glfwCreateWindow(width, height, title, nullptr, nullptr);
-    if (!window) {
+    if (!window)
+    {
         glfwTerminate();
         throw std::runtime_error("Failed to create GLFW window!");
     }
@@ -19,21 +22,26 @@ void WindowManager::init(uint32_t width, uint32_t height, const char* title) {
     glfwSetFramebufferSizeCallback(window, glfwFramebufferResizeCallback);
 }
 
-void WindowManager::cleanup() {
-    if (window) {
+void WindowManager::cleanup()
+{
+    if (window)
+    {
         glfwDestroyWindow(window);
         window = nullptr;
     }
     glfwTerminate();
 }
 
-void WindowManager::setFramebufferResizeCallback(GLFWframebuffersizefun callback) {
+void WindowManager::setFramebufferResizeCallback(GLFWframebuffersizefun callback)
+{
     glfwSetFramebufferSizeCallback(window, callback);
 }
 
-void WindowManager::glfwFramebufferResizeCallback(GLFWwindow* window, int width, int height) {
+void WindowManager::glfwFramebufferResizeCallback(GLFWwindow* window, int width, int height)
+{
     auto manager = reinterpret_cast<WindowManager*>(glfwGetWindowUserPointer(window));
-    if(manager){
+    if (manager)
+    {
         manager->framebufferResized = true;
     }
     // if (manager && manager->framebufferResizeCallback) {

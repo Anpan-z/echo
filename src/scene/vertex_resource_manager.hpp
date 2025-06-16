@@ -2,65 +2,63 @@
 
 #include <vulkan/vulkan.h>
 #define GLM_ENABLE_EXPERIMENTAL
-#ifndef GLM_FORCE_DEPTH_ZERO_TO_ONE  
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE  
-#endif 
-#include <glm/glm.hpp>
-#include <vector>
-#include <string>
-#include <unordered_map>
-#include <memory>
-#include "vertex.hpp" // 包含顶点结构体定义
-#include "command_manager.hpp"
+#ifndef GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#endif
 #include "camera.hpp"
+#include "command_manager.hpp"
+#include "vertex.hpp" // 包含顶点结构体定义
+#include <glm/glm.hpp>
+#include <memory>
+#include <string>
 #include <tiny_obj_loader.h> // 包含 tinyobj_loader 库
+#include <unordered_map>
+#include <vector>
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
-struct UniformBufferObject {
+struct UniformBufferObject
+{
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
-    glm::vec3 cameraPos; // 
+    glm::vec3 cameraPos; //
     float padding;       // 保持对齐（vec3 + float = 16字节）
     glm::mat4 lightSpaceMatrix;
 };
 
-struct MaterialUniformBufferObject {
+struct MaterialUniformBufferObject
+{
     alignas(16) glm::vec3 albedo;
-    alignas(4)  float metallic;
-    alignas(4)  float roughness;
-    alignas(4)  float ambientOcclusion;
-    alignas(4)  float padding2;  // 对齐
-    alignas(4)  float emission; // 自发光强度
+    alignas(4) float metallic;
+    alignas(4) float roughness;
+    alignas(4) float ambientOcclusion;
+    alignas(4) float padding2; // 对齐
+    alignas(4) float emission; // 自发光强度
 
-    MaterialUniformBufferObject(
-        glm::vec3 albedo = glm::vec3(1.0f),
-        float emission = 0.0f
-    )
-        : albedo(albedo),
-          metallic(0.0f),
-          roughness(0.5f),
-          ambientOcclusion(1.0f),
-          padding2(0.0f),
-          emission(emission)
-    {}
+    MaterialUniformBufferObject(glm::vec3 albedo = glm::vec3(1.0f), float emission = 0.0f)
+        : albedo(albedo), metallic(0.0f), roughness(0.5f), ambientOcclusion(1.0f), padding2(0.0f), emission(emission)
+    {
+    }
 };
 
-class ModelReloadObserver {
-    public:
-        virtual void onModelReloaded() = 0; // 当模型重新加载时的回调
-        virtual ~ModelReloadObserver() = default;
-    };
+class ModelReloadObserver
+{
+  public:
+    virtual void onModelReloaded() = 0; // 当模型重新加载时的回调
+    virtual ~ModelReloadObserver() = default;
+};
 
-class MaterialIpdateObsever {
-    public:
-        virtual void onMaterialUpdated() = 0; // 当材质更新时的回调
-        virtual ~MaterialIpdateObsever() = default;
-    };
+class MaterialIpdateObsever
+{
+  public:
+    virtual void onMaterialUpdated() = 0; // 当材质更新时的回调
+    virtual ~MaterialIpdateObsever() = default;
+};
 
-class VertexResourceManager {
-public:
+class VertexResourceManager
+{
+  public:
     // static VertexResourceManager& getInstance();
 
     // VertexResourceManager(const VertexResourceManager&) = delete;
@@ -84,35 +82,77 @@ public:
 
     void createSkyBoxVertexBuffer();
 
-    const std::vector<Vertex>& getVertices() const{return vertices;};
+    const std::vector<Vertex>& getVertices() const
+    {
+        return vertices;
+    };
 
-    const std::vector<uint32_t>& getIndices() const{return indices;};
+    const std::vector<uint32_t>& getIndices() const
+    {
+        return indices;
+    };
 
-    const std::vector<VkBuffer>& getUniformBuffers() const{return uniformBuffers;};
+    const std::vector<VkBuffer>& getUniformBuffers() const
+    {
+        return uniformBuffers;
+    };
 
-    const std::vector<VkDeviceMemory>& getUniformBuffersMemory() const{return uniformBuffersMemory;};
+    const std::vector<VkDeviceMemory>& getUniformBuffersMemory() const
+    {
+        return uniformBuffersMemory;
+    };
 
-    const std::vector<void*>& getUniformBuffersMapped() const{return uniformBuffersMapped;};
+    const std::vector<void*>& getUniformBuffersMapped() const
+    {
+        return uniformBuffersMapped;
+    };
 
-    std::vector<VkBuffer>& getMaterialUniformBuffers() {return materialUniformBuffers;};
+    std::vector<VkBuffer>& getMaterialUniformBuffers()
+    {
+        return materialUniformBuffers;
+    };
 
-    const std::vector<std::string>& getShapeNames() const { return shapeNames; }
+    const std::vector<std::string>& getShapeNames() const
+    {
+        return shapeNames;
+    }
 
-    const std::vector<std::shared_ptr<MaterialUniformBufferObject>>& getMaterialUniformBufferObjects() const { return materialUniformBufferObjects; }
+    const std::vector<std::shared_ptr<MaterialUniformBufferObject>>& getMaterialUniformBufferObjects() const
+    {
+        return materialUniformBufferObjects;
+    }
 
-    float* getMetallics() const { return metallics; }
-    
-    VkBuffer getVertexBuffer() const { return vertexBuffer; }
+    float* getMetallics() const
+    {
+        return metallics;
+    }
 
-    VkBuffer getIndexBuffer() const { return indexBuffer; }
+    VkBuffer getVertexBuffer() const
+    {
+        return vertexBuffer;
+    }
 
-    VkBuffer getSkyBoxVertexBuffer() const { return skyBoxVertexBuffer; }
+    VkBuffer getIndexBuffer() const
+    {
+        return indexBuffer;
+    }
 
-    void addModelReloadObserver(ModelReloadObserver* observer) { modelReloadObservers.push_back(observer);}
+    VkBuffer getSkyBoxVertexBuffer() const
+    {
+        return skyBoxVertexBuffer;
+    }
 
-    void addMaterialUpdateObserver(MaterialIpdateObsever* observer) { materialUpdateObservers.push_back(observer); }
+    void addModelReloadObserver(ModelReloadObserver* observer)
+    {
+        modelReloadObservers.push_back(observer);
+    }
 
-private:
+    void addMaterialUpdateObserver(MaterialIpdateObsever* observer)
+    {
+        materialUpdateObservers.push_back(observer);
+    }
+
+  private:
     VkDevice device;
     VkPhysicalDevice physicalDevice;
     CommandManager* commandManager;
@@ -140,18 +180,19 @@ private:
     // std::unordered_map<std::string, tinyobj::material_t> materials; // 材质映射
     // std::unordered_map<std::string, tinyobj::shape_t> shapes; // 形状映射
     // std::unordered_map<std::string, tinyobj::attrib_t> attribs; // 属性映射
-    
+
     float metallicValue = 0.5f;
-    float* metallics = &metallicValue; // 金属度数组
-    std::vector<std::string> shapeNames; // 形状名称数组
-    std::vector<std::shared_ptr<MaterialUniformBufferObject>> materialUniformBufferObjects; // 材质统一缓冲区对象
+    float* metallics = &metallicValue;                                                         // 金属度数组
+    std::vector<std::string> shapeNames;                                                       // 形状名称数组
+    std::vector<std::shared_ptr<MaterialUniformBufferObject>> materialUniformBufferObjects;    // 材质统一缓冲区对象
     std::vector<std::shared_ptr<MaterialUniformBufferObject>> preMaterialUniformBufferObjects; // 材质统一缓冲区对象
-    
-    std::vector<ModelReloadObserver*> modelReloadObservers; // 存储观察者
+
+    std::vector<ModelReloadObserver*> modelReloadObservers;      // 存储观察者
     std::vector<MaterialIpdateObsever*> materialUpdateObservers; // 存储材质更新观察者
-    
+
     // 工具函数
-    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer,
+                      VkDeviceMemory& bufferMemory);
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     void generateNormals(tinyobj::attrib_t& attrib, std::vector<tinyobj::shape_t>& shapes);
 

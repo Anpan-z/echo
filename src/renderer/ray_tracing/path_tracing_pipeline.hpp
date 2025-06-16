@@ -1,15 +1,17 @@
 #pragma once
 
 #include "path_tracing_resource_manager.hpp"
-#include <vulkan/vulkan.h>
 #include <string>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 class PathTracingPipelineObserver;
 
-class PathTracingPipeline {
-public:
-    void init(VkDevice device, VkPhysicalDevice physicalDevice, PathTracingResourceManager& pathTracingResourceManager, std::vector<VkCommandBuffer>&& commandBuffers);
+class PathTracingPipeline
+{
+  public:
+    void init(VkDevice device, VkPhysicalDevice physicalDevice, PathTracingResourceManager& pathTracingResourceManager,
+              std::vector<VkCommandBuffer>&& commandBuffers);
     void cleanup();
 
     VkCommandBuffer recordCommandBuffer(uint32_t frameIndex, uint32_t imageIndex);
@@ -18,8 +20,12 @@ public:
 
     void updateStorageBufferDescriptorSet();
 
-    VkCommandBuffer getCommandBuffer(size_t index) const { return pathTracingCommandBuffers[index]; }
-private:
+    VkCommandBuffer getCommandBuffer(size_t index) const
+    {
+        return pathTracingCommandBuffers[index];
+    }
+
+  private:
     VkDevice device = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     PathTracingResourceManager* pathTracingResourceManager = nullptr;
@@ -46,25 +52,32 @@ private:
     void createDescriptorSets();
 };
 
-class PathTracingPipelineObserver : public PathTracingResourceReloadObserver {
-    public:
-        PathTracingPipelineObserver(PathTracingPipeline* pathTracingPipeline) // 使用指向 RenderPipeline 的指针
-            : pathTracingPipeline(pathTracingPipeline) {}
-    
-        void onModelReloaded() override {
-            // 当模型重新加载时，更新 RenderPipeline 的描述符集
-            if (pathTracingPipeline) {
-                pathTracingPipeline->updateStorageBufferDescriptorSet();
-            }
-        }
+class PathTracingPipelineObserver : public PathTracingResourceReloadObserver
+{
+  public:
+    PathTracingPipelineObserver(PathTracingPipeline* pathTracingPipeline) // 使用指向 RenderPipeline 的指针
+        : pathTracingPipeline(pathTracingPipeline)
+    {
+    }
 
-        void onPathTracingOutputImagesRecreated() override {
-            // 当路径追踪输出图像重新创建时，更新 RenderPipeline 的描述符集
-            if (pathTracingPipeline) {
-                pathTracingPipeline->updateOutputImageDescriptorSet();
-            }
+    void onModelReloaded() override
+    {
+        // 当模型重新加载时，更新 RenderPipeline 的描述符集
+        if (pathTracingPipeline)
+        {
+            pathTracingPipeline->updateStorageBufferDescriptorSet();
         }
-    
-    private:
-        PathTracingPipeline* pathTracingPipeline; // 持有 RenderPipeline 的指针
+    }
+
+    void onPathTracingOutputImagesRecreated() override
+    {
+        // 当路径追踪输出图像重新创建时，更新 RenderPipeline 的描述符集
+        if (pathTracingPipeline)
+        {
+            pathTracingPipeline->updateOutputImageDescriptorSet();
+        }
+    }
+
+  private:
+    PathTracingPipeline* pathTracingPipeline; // 持有 RenderPipeline 的指针
 };

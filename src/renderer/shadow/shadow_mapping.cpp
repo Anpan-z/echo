@@ -2,23 +2,24 @@
 #include "vulkan_utils.hpp"
 
 #include "vertex.hpp"
-#include <stdexcept>
 #include <array>
-#ifndef GLM_FORCE_DEPTH_ZERO_TO_ONE  
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE  
-#endif  
+#include <stdexcept>
+#ifndef GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#endif
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <shaderc/shaderc.hpp>//这个头文件位于VulkanSDK的Include文件夹内
-#include <vector>
+#include <shaderc/shaderc.hpp> //这个头文件位于VulkanSDK的Include文件夹内
 #include <span>
+#include <vector>
 
-void ShadowMapping::init(VkDevice device, VkPhysicalDevice physicalDevice, VertexResourceManager& vertexResourceManager, std::vector<VkCommandBuffer>&& shadowCommandBuffers) {
+void ShadowMapping::init(VkDevice device, VkPhysicalDevice physicalDevice, VertexResourceManager& vertexResourceManager,
+                         std::vector<VkCommandBuffer>&& shadowCommandBuffers)
+{
     this->device = device;
     this->physicalDevice = physicalDevice;
     this->vertexResourceManager = &vertexResourceManager;
     this->shadowCommandBuffers = std::move(shadowCommandBuffers);
-
 
     createShadowResources();
     createShadowRenderPass();
@@ -31,7 +32,8 @@ void ShadowMapping::init(VkDevice device, VkPhysicalDevice physicalDevice, Verte
     createShadowSampler();
 }
 
-void ShadowMapping::cleanup() {
+void ShadowMapping::cleanup()
+{
     vkDestroySampler(device, shadowSampler, nullptr);
     vkDestroyPipeline(device, shadowPipeline, nullptr);
     vkDestroyPipelineLayout(device, shadowPipelineLayout, nullptr);
@@ -41,7 +43,8 @@ void ShadowMapping::cleanup() {
     vkDestroyImage(device, shadowDepthImage, nullptr);
     vkFreeMemory(device, shadowDepthImageMemory, nullptr);
 
-    for (size_t i = 0; i < shadowUniformBuffers.size(); i++) {
+    for (size_t i = 0; i < shadowUniformBuffers.size(); i++)
+    {
         vkDestroyBuffer(device, shadowUniformBuffers[i], nullptr);
         vkFreeMemory(device, shadowUniformBufferMemories[i], nullptr);
     }
@@ -52,14 +55,20 @@ void ShadowMapping::cleanup() {
 
 // 其他函数实现省略，参考主文件中的逻辑
 
-void ShadowMapping::createShadowResources() {
+void ShadowMapping::createShadowResources()
+{
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
     VkFormat SHADOW_DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
-    vulkanUtils.createImage(device, physicalDevice, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, SHADOW_DEPTH_FORMAT, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowDepthImage, shadowDepthImageMemory);
-    shadowDepthImageView = vulkanUtils.createImageView(device, shadowDepthImage, SHADOW_DEPTH_FORMAT, VK_IMAGE_ASPECT_DEPTH_BIT);
+    vulkanUtils.createImage(
+        device, physicalDevice, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, SHADOW_DEPTH_FORMAT, VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowDepthImage, shadowDepthImageMemory);
+    shadowDepthImageView =
+        vulkanUtils.createImageView(device, shadowDepthImage, SHADOW_DEPTH_FORMAT, VK_IMAGE_ASPECT_DEPTH_BIT);
 }
 
-void ShadowMapping::createShadowRenderPass() {
+void ShadowMapping::createShadowRenderPass()
+{
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = VK_FORMAT_D32_SFLOAT;
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -89,8 +98,9 @@ void ShadowMapping::createShadowRenderPass() {
     vkCreateRenderPass(device, &renderPassInfo, nullptr, &shadowRenderPass);
 }
 
-void ShadowMapping::createShadowFramebuffer() {
-    VkImageView attachments[] = { shadowDepthImageView };
+void ShadowMapping::createShadowFramebuffer()
+{
+    VkImageView attachments[] = {shadowDepthImageView};
 
     VkFramebufferCreateInfo framebufferInfo{};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -104,7 +114,8 @@ void ShadowMapping::createShadowFramebuffer() {
     vkCreateFramebuffer(device, &framebufferInfo, nullptr, &shadowFramebuffer);
 }
 
-void ShadowMapping::createShadowDescriptorPool() {
+void ShadowMapping::createShadowDescriptorPool()
+{
     std::array<VkDescriptorPoolSize, 1> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
@@ -115,12 +126,14 @@ void ShadowMapping::createShadowDescriptorPool() {
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &shadowDescriptorPool) != VK_SUCCESS) {
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &shadowDescriptorPool) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create shadow descriptor pool!");
     }
 }
 
-void ShadowMapping::createShadowDescriptorSetLayout() {
+void ShadowMapping::createShadowDescriptorSetLayout()
+{
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -136,20 +149,24 @@ void ShadowMapping::createShadowDescriptorSetLayout() {
     vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &shadowDescriptorSetLayout);
 }
 
-void ShadowMapping::createShadowUniformBuffer() {
+void ShadowMapping::createShadowUniformBuffer()
+{
     VkDeviceSize bufferSize = sizeof(ShadowUBO);
     shadowUniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
     shadowUniformBufferMemories.resize(MAX_FRAMES_IN_FLIGHT);
     shadowUniformMappedMemory.resize(MAX_FRAMES_IN_FLIGHT);
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
         VulkanUtils::getInstance().createBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            shadowUniformBuffers[i], shadowUniformBufferMemories[i]);
+                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                shadowUniformBuffers[i], shadowUniformBufferMemories[i]);
         vkMapMemory(device, shadowUniformBufferMemories[i], 0, bufferSize, 0, &shadowUniformMappedMemory[i]);
     }
 }
 
-void ShadowMapping::createShadowDescriptorSet() {
+void ShadowMapping::createShadowDescriptorSet()
+{
     std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, shadowDescriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -158,11 +175,13 @@ void ShadowMapping::createShadowDescriptorSet() {
     allocInfo.pSetLayouts = layouts.data();
 
     shadowDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-    if (vkAllocateDescriptorSets(device, &allocInfo, shadowDescriptorSets.data()) != VK_SUCCESS) {
+    if (vkAllocateDescriptorSets(device, &allocInfo, shadowDescriptorSets.data()) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = shadowUniformBuffers[i];
         bufferInfo.offset = 0;
@@ -181,7 +200,8 @@ void ShadowMapping::createShadowDescriptorSet() {
     }
 }
 
-void ShadowMapping::createShadowPipeline() {
+void ShadowMapping::createShadowPipeline()
+{
     VulkanUtils& vulkanUtils = VulkanUtils::getInstance();
     std::string shadow_vertex_shader_code_path = "../shader/shadow.vert";
     std::string shadow_fragment_shader_code_path = "../shader/shadow.frag";
@@ -190,35 +210,38 @@ void ShadowMapping::createShadowPipeline() {
     std::string fs = vulkanUtils.readFileToString(shadow_fragment_shader_code_path);
 
     shaderc::Compiler compiler;
-    //编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
+    // 编译顶点着色器，参数分别是着色器代码字符串，着色器类型，文件名
     auto vertResult = compiler.CompileGlslToSpv(vs, shaderc_glsl_vertex_shader, shadow_vertex_shader_code_path.c_str());
     auto errorInfo_vert = vertResult.GetErrorMessage();
-    if (!errorInfo_vert.empty()) {
+    if (!errorInfo_vert.empty())
+    {
         throw std::runtime_error("Vertex shader compilation error: " + errorInfo_vert);
     }
-    //可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
+    // 可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
 
-    std::span<const uint32_t> vert_spv = { vertResult.begin(), size_t(vertResult.end() - vertResult.begin()) * 4 };
-    VkShaderModuleCreateInfo vsmoduleCreateInfo;// 准备顶点着色器模块创建信息
+    std::span<const uint32_t> vert_spv = {vertResult.begin(), size_t(vertResult.end() - vertResult.begin()) * 4};
+    VkShaderModuleCreateInfo vsmoduleCreateInfo; // 准备顶点着色器模块创建信息
     vsmoduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    vsmoduleCreateInfo.pNext = nullptr;// 自定义数据的指针
+    vsmoduleCreateInfo.pNext = nullptr; // 自定义数据的指针
     vsmoduleCreateInfo.flags = 0;
-    vsmoduleCreateInfo.codeSize = vert_spv.size();// 顶点着色器SPV数据总字节数
-    vsmoduleCreateInfo.pCode = vert_spv.data(); // 顶点着色器SPV数据
+    vsmoduleCreateInfo.codeSize = vert_spv.size(); // 顶点着色器SPV数据总字节数
+    vsmoduleCreateInfo.pCode = vert_spv.data();    // 顶点着色器SPV数据
 
-    auto fragResult = compiler.CompileGlslToSpv(fs, shaderc_glsl_fragment_shader, shadow_fragment_shader_code_path.c_str());
+    auto fragResult =
+        compiler.CompileGlslToSpv(fs, shaderc_glsl_fragment_shader, shadow_fragment_shader_code_path.c_str());
     auto errorInfo_frag = fragResult.GetErrorMessage();
-    if (!errorInfo_frag.empty()) {
+    if (!errorInfo_frag.empty())
+    {
         throw std::runtime_error("Fragment shader compilation error: " + errorInfo_frag);
     }
-    //可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
-    std::span<const uint32_t> frag_spv = { fragResult.begin(), size_t(fragResult.end() - fragResult.begin()) * 4 };
-    VkShaderModuleCreateInfo fsmoduleCreateInfo;// 准备顶点着色器模块创建信息
+    // 可以加判断，如果有错误信息(errorInfo!=""),就抛出异常
+    std::span<const uint32_t> frag_spv = {fragResult.begin(), size_t(fragResult.end() - fragResult.begin()) * 4};
+    VkShaderModuleCreateInfo fsmoduleCreateInfo; // 准备顶点着色器模块创建信息
     fsmoduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    fsmoduleCreateInfo.pNext = nullptr;// 自定义数据的指针
+    fsmoduleCreateInfo.pNext = nullptr; // 自定义数据的指针
     fsmoduleCreateInfo.flags = 0;
-    fsmoduleCreateInfo.codeSize = frag_spv.size();// 顶点着色器SPV数据总字节数
-    fsmoduleCreateInfo.pCode = frag_spv.data(); // 顶点着色器SPV数据
+    fsmoduleCreateInfo.codeSize = frag_spv.size(); // 顶点着色器SPV数据总字节数
+    fsmoduleCreateInfo.pCode = frag_spv.data();    // 顶点着色器SPV数据
 
     VkShaderModule vertShaderModule = vulkanUtils.createShaderModule(device, vsmoduleCreateInfo);
     VkShaderModule fragShaderModule = vulkanUtils.createShaderModule(device, fsmoduleCreateInfo);
@@ -235,7 +258,7 @@ void ShadowMapping::createShadowPipeline() {
     fragShaderStageInfo.module = fragShaderModule;
     fragShaderStageInfo.pName = "main";
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
     auto bindingDescription = Vertex::getBindingDescription();
     auto attributeDescriptions = Vertex::getShadowMapAttributeDescriptions();
@@ -261,8 +284,8 @@ void ShadowMapping::createShadowPipeline() {
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
-    scissor.extent = { SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT };
+    scissor.offset = {0, 0};
+    scissor.extent = {SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT};
 
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -280,9 +303,9 @@ void ShadowMapping::createShadowPipeline() {
     rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
-    //rasterizer.depthBiasConstantFactor = 1.25f;
-    //rasterizer.depthBiasClamp = 0.0f;
-    //rasterizer.depthBiasSlopeFactor = 1.75f;
+    // rasterizer.depthBiasConstantFactor = 1.25f;
+    // rasterizer.depthBiasClamp = 0.0f;
+    // rasterizer.depthBiasSlopeFactor = 1.75f;
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -303,22 +326,23 @@ void ShadowMapping::createShadowPipeline() {
     colorBlending.attachmentCount = 0; // 因为没有 color attachment
     colorBlending.pAttachments = nullptr;
 
-    //std::vector<VkDynamicState> dynamicStates = {
-    //    VK_DYNAMIC_STATE_VIEWPORT,
-    //    VK_DYNAMIC_STATE_SCISSOR,
-    //    VK_DYNAMIC_STATE_DEPTH_BIAS
-    //};
-    //VkPipelineDynamicStateCreateInfo dynamicState{};
-    //dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    //dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    //dynamicState.pDynamicStates = dynamicStates.data();
+    // std::vector<VkDynamicState> dynamicStates = {
+    //     VK_DYNAMIC_STATE_VIEWPORT,
+    //     VK_DYNAMIC_STATE_SCISSOR,
+    //     VK_DYNAMIC_STATE_DEPTH_BIAS
+    // };
+    // VkPipelineDynamicStateCreateInfo dynamicState{};
+    // dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    // dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    // dynamicState.pDynamicStates = dynamicStates.data();
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &shadowDescriptorSetLayout;
 
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &shadowPipelineLayout) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &shadowPipelineLayout) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create shadow pipeline layout!");
     }
 
@@ -337,7 +361,8 @@ void ShadowMapping::createShadowPipeline() {
     pipelineInfo.renderPass = shadowRenderPass;
     pipelineInfo.subpass = 0;
 
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowPipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowPipeline) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to create shadow graphics pipeline!");
     }
 
@@ -345,7 +370,8 @@ void ShadowMapping::createShadowPipeline() {
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
 }
 
-void ShadowMapping::createShadowSampler() {
+void ShadowMapping::createShadowSampler()
+{
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_LINEAR;
@@ -361,7 +387,8 @@ void ShadowMapping::createShadowSampler() {
     vkCreateSampler(device, &samplerInfo, nullptr, &shadowSampler);
 }
 
-void ShadowMapping::updateShadowUniformBuffer(uint32_t currentFrame) {
+void ShadowMapping::updateShadowUniformBuffer(uint32_t currentFrame)
+{
     ShadowUBO ubo{};
     auto lightPos = glm::vec3(3.0f, 3.0f, 3.0f);
     glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
@@ -372,24 +399,26 @@ void ShadowMapping::updateShadowUniformBuffer(uint32_t currentFrame) {
     memcpy(shadowUniformMappedMemory[currentFrame], &ubo, sizeof(ubo));
 }
 
-VkCommandBuffer ShadowMapping::recordShadowCommandBuffer(uint32_t currentFrame) {
+VkCommandBuffer ShadowMapping::recordShadowCommandBuffer(uint32_t currentFrame)
+{
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
     VkCommandBuffer commandBuffer = shadowCommandBuffers[currentFrame];
-    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-       throw std::runtime_error("failed to begin recording command buffer!");
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to begin recording command buffer!");
     }
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = shadowRenderPass;
     renderPassInfo.framebuffer = shadowFramebuffer;
-    renderPassInfo.renderArea.offset = { 0, 0 };
-    renderPassInfo.renderArea.extent = { SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT };
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = {SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT};
 
     VkClearValue clearValue{};
-    clearValue.depthStencil = { 1.0f, 0 };
+    clearValue.depthStencil = {1.0f, 0};
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearValue;
 
@@ -397,25 +426,21 @@ VkCommandBuffer ShadowMapping::recordShadowCommandBuffer(uint32_t currentFrame) 
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
 
-    VkBuffer vertexBuffers[] = { vertexResourceManager->getVertexBuffer() };
-    VkDeviceSize offsets[] = { 0 };
+    VkBuffer vertexBuffers[] = {vertexResourceManager->getVertexBuffer()};
+    VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffer, vertexResourceManager->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdBindDescriptorSets(
-        commandBuffer,
-        VK_PIPELINE_BIND_POINT_GRAPHICS,
-        shadowPipelineLayout,
-        0, 1, &shadowDescriptorSets[currentFrame],
-        0, nullptr
-    );
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout, 0, 1,
+                            &shadowDescriptorSets[currentFrame], 0, nullptr);
 
     vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(vertexResourceManager->getIndices().size()), 1, 0, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
 
-    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-       throw std::runtime_error("failed to record command buffer!");
+    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to record command buffer!");
     }
     return commandBuffer;
 }

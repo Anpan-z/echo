@@ -1,14 +1,17 @@
 #include "echo.hpp"
 #include "echo_offline.hpp"
 
-int main() {
+int main()
+{
     ECHO app;
     // ECHOOFFLINE app;
 
-    try {
+    try
+    {
         app.run();
     }
-    catch (const std::exception& e) {
+    catch (const std::exception& e)
+    {
         std::cerr << e.what() << std::endl;
         return EXIT_FAILURE;
     }
