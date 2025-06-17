@@ -5,10 +5,10 @@
 #include "swap_chain_manager.hpp"
 #include "vulkan_context.hpp"
 #include "vulkan_utils.hpp"
+#include <windows.h>
 #include <commdlg.h>
 #include <filesystem>
 #include <stdexcept>
-#include <windows.h>
 
 void ImGuiManager::init(GLFWwindow* window, VulkanContext& vulkanContext, SwapChainManager& swapChainManager,
                         VertexResourceManager& vertexResourceManager, CommandManager& commandManager)

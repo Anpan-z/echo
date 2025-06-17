@@ -22,7 +22,7 @@
  * @author zhangjx
  * @date 2025-04-25
  */
-
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <optional>
 #include <set>
